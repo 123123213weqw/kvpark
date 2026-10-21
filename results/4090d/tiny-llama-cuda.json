@@ -1,0 +1,82 @@
+{
+  "model": "tiny-random-llama-no-download",
+  "model_revision": "random-seed-1234-config-c2a498297045498af5434e1bd7aa764d09cb6fefb5f48a0dce5d87ef4e9a3210",
+  "hardware": {
+    "os": "Linux",
+    "kernel": "7.0.0-38-generic",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gpu_total_bytes": 25250627584,
+    "nvidia_smi_start": "3, 3, 16, 15336 MiB, 0 %, 580.178.04"
+  },
+  "prompt_kind": "seeded synthetic token IDs, not private prompts",
+  "prefix_tokens": 511,
+  "cache_bytes": 523264,
+  "cache_shape": [
+    4,
+    2,
+    1,
+    2,
+    511,
+    32
+  ],
+  "pack_ms": 0.4100679652765393,
+  "direct_io": true,
+  "verification": true,
+  "tiny_random_model": true,
+  "durable_store_ms": 29.788361047394574,
+  "byte_exact": true,
+  "greedy_tokens_identical": true,
+  "max_abs_logit_difference": 0.0,
+  "prefix_recompute": {
+    "samples_ms": [
+      8.782897959463298,
+      7.926785969175398,
+      7.88410403765738,
+      7.661478011868894,
+      7.047396036796272
+    ],
+    "median_ms": 7.88410403765738,
+    "min_ms": 7.047396036796272,
+    "p95_ms": 8.782897959463298,
+    "GB_per_s": 0.06636949455520864
+  },
+  "disk_restore": {
+    "samples_ms": [
+      3.0866810120642185,
+      3.537839977070689,
+      3.1886539654806256,
+      3.324184101074934,
+      3.3476650714874268
+    ],
+    "median_ms": 3.324184101074934,
+    "min_ms": 3.0866810120642185,
+    "p95_ms": 3.537839977070689,
+    "GB_per_s": 0.15741125764688943
+  },
+  "prefetch_to_ram_ms": 4.223986994475126,
+  "ram_restore": {
+    "samples_ms": [
+      1.027223072014749,
+      0.9552199626341462,
+      0.9282010141760111,
+      1.0400520404800773,
+      1.0394590208306909
+    ],
+    "median_ms": 1.027223072014749,
+    "min_ms": 0.9282010141760111,
+    "p95_ms": 1.0400520404800773,
+    "GB_per_s": 0.5093966580926708
+  },
+  "lossless_zlib_level1_sample": {
+    "input_bytes": 523264,
+    "output_bytes": 461636,
+    "ratio": 1.1334991205191969,
+    "compress_ms": 32.05813397653401,
+    "scope": "at most 16 MiB; not the transport default"
+  }
+}

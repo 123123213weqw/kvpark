@@ -1,0 +1,10 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "weight_filename": "model.safetensors",
+  "weight_bytes": 988097824,
+  "official_lfs_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+  "local_download_sha256_verified": true,
+  "source": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
+  "weights_redistributed_in_repository": false
+}
