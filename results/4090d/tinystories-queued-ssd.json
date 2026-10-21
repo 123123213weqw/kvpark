@@ -1,0 +1,148 @@
+{
+  "model": "roneneldan/TinyStories-1M",
+  "model_revision": "77f1b168e219585646439073245fe87e56b3023e",
+  "hardware": {
+    "os": "Linux",
+    "kernel": "7.0.0-38-generic",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gpu_total_bytes": 25250627584,
+    "nvidia_smi_start": "3, 3, 16, 15284 MiB, 0 %, 580.178.04"
+  },
+  "tiny_random_model": false,
+  "prefix_tokens": 1023,
+  "sessions": 4,
+  "decode_tokens_per_session": 64,
+  "direct_io": true,
+  "verification": true,
+  "gpu_exclusive": false,
+  "scope": "known sequential queue; service TTFT excludes arrival queue wait",
+  "arrival_model": "all requests are available at the start of each measured mode",
+  "modes": {
+    "on_demand_disk": {
+      "wall_ms_including_initial_prefetch": 2556.281444034539,
+      "median_service_ttft_ms": 19.124211510643363,
+      "steady_state_median_service_ttft_ms": 19.11771099548787,
+      "median_arrival_ttft_ms": 977.5454755290411,
+      "requests": [
+        {
+          "session": 0,
+          "prefetch_wait_ms": 0.00019907020032405853,
+          "restore_ms": 8.545260992832482,
+          "service_ttft_ms": 19.130712025798857,
+          "arrival_ttft_ms": 19.13599099498242,
+          "total_service_ms": 635.7647770782933,
+          "continuation_sha256": "40e26d4b6a2a9152c807ced98092d8b89795ed90890b3ec8318825b3cfdeaf3f"
+        },
+        {
+          "session": 1,
+          "prefetch_wait_ms": 0.00036600977182388306,
+          "restore_ms": 8.556091925129294,
+          "service_ttft_ms": 19.163807039149106,
+          "arrival_ttft_ms": 654.9825350521132,
+          "total_service_ms": 645.1541590504348,
+          "continuation_sha256": "9b6bf7140a32885f5de27f643357e7dc28441017835cbd99ba95d244def7736a"
+        },
+        {
+          "session": 2,
+          "prefetch_wait_ms": 0.0003189779818058014,
+          "restore_ms": 8.349590003490448,
+          "service_ttft_ms": 19.08142992760986,
+          "arrival_ttft_ms": 1300.108416005969,
+          "total_service_ms": 636.4722459111363,
+          "continuation_sha256": "99448f82d945a670ab9811805f668dd778ef7ce150e6927745d8c9f8825984c7"
+        },
+        {
+          "session": 3,
+          "prefetch_wait_ms": 0.00027404166758060455,
+          "restore_ms": 8.50799004547298,
+          "service_ttft_ms": 19.11771099548787,
+          "arrival_ttft_ms": 1936.672369018197,
+          "total_service_ms": 638.6606789892539,
+          "continuation_sha256": "c89504f9cc917101a75f07d08bd4838d032195c6a59118307dfffe2d538849c3"
+        }
+      ],
+      "store_stats": {
+        "ram_used_bytes": 0,
+        "ram_budget_bytes": 4206592,
+        "ram_entries": 0,
+        "disk_used_bytes": 8388608,
+        "disk_budget_bytes": 10516480,
+        "disk_entries": 4,
+        "staging_bytes": 16785408,
+        "pinned": true,
+        "direct_io": true,
+        "verify": true,
+        "pipeline_reads": true
+      }
+    },
+    "queued_lookahead": {
+      "wall_ms_including_initial_prefetch": 2456.3182819401845,
+      "median_service_ttft_ms": 12.488398526329547,
+      "steady_state_median_service_ttft_ms": 12.34419597312808,
+      "median_arrival_ttft_ms": 977.2122949943878,
+      "requests": [
+        {
+          "session": 0,
+          "prefetch_wait_ms": 12.899177963845432,
+          "restore_ms": 1.0124259861186147,
+          "service_ttft_ms": 29.832731001079082,
+          "arrival_ttft_ms": 29.861447983421385,
+          "total_service_ms": 649.2780380649492,
+          "continuation_sha256": "40e26d4b6a2a9152c807ced98092d8b89795ed90890b3ec8318825b3cfdeaf3f"
+        },
+        {
+          "session": 1,
+          "prefetch_wait_ms": 0.0051299575716257095,
+          "restore_ms": 0.9134409483522177,
+          "service_ttft_ms": 12.34419597312808,
+          "arrival_ttft_ms": 661.70230996795,
+          "total_service_ms": 630.6834330316633,
+          "continuation_sha256": "9b6bf7140a32885f5de27f643357e7dc28441017835cbd99ba95d244def7736a"
+        },
+        {
+          "session": 2,
+          "prefetch_wait_ms": 0.005032052285969257,
+          "restore_ms": 1.0705579770728946,
+          "service_ttft_ms": 12.632601079531014,
+          "arrival_ttft_ms": 1292.7222800208256,
+          "total_service_ms": 628.6409409949556,
+          "continuation_sha256": "99448f82d945a670ab9811805f668dd778ef7ce150e6927745d8c9f8825984c7"
+        },
+        {
+          "session": 3,
+          "prefetch_wait_ms": 0.004923087544739246,
+          "restore_ms": 0.974185997620225,
+          "service_ttft_ms": 11.496107093989849,
+          "arrival_ttft_ms": 1920.2740270411596,
+          "total_service_ms": 547.494096099399,
+          "continuation_sha256": "c89504f9cc917101a75f07d08bd4838d032195c6a59118307dfffe2d538849c3"
+        }
+      ],
+      "store_stats": {
+        "ram_used_bytes": 4202496,
+        "ram_budget_bytes": 4206592,
+        "ram_entries": 2,
+        "disk_used_bytes": 8388608,
+        "disk_budget_bytes": 10516480,
+        "disk_entries": 4,
+        "staging_bytes": 16785408,
+        "pinned": true,
+        "direct_io": true,
+        "verify": true,
+        "pipeline_reads": true
+      }
+    }
+  },
+  "prefill_kwargs": {
+    "logits_to_keep": 1
+  },
+  "cache_bytes_per_session": 2095104,
+  "ram_budget_bytes": 4206592,
+  "continuations_identical": true,
+  "continuations_match_original_cache": true
+}

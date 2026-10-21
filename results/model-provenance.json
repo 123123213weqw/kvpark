@@ -5,6 +5,8 @@
   "weight_bytes": 988097824,
   "official_lfs_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
   "local_download_sha256_verified": true,
+  "gpu_pretrained_validation_performed": false,
+  "scope": "Optional larger-model recipe; actual trained-model validation uses the separately recorded TinyStories checkpoint.",
   "source": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
   "weights_redistributed_in_repository": false
 }

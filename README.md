@@ -7,9 +7,9 @@ not the fiction that a hard drive can replace active GPU memory at no cost.
 > Experimental research prototype. RTX 4090 D uses GDDR6X, **not HBM**.
 > No direct-storage or end-to-end serving-speed claim is implied by a memcpy benchmark.
 
-**Measured on the target 4090 D:** verified 1-GiB restore takes **9.15 s from HDD**,
-**3.06 s from SATA SSD**, or **0.10 s from already prepared pinned RAM**. Preparing
-that RAM hit itself takes about 10.17 s from HDD. See [raw-backed results](docs/results.md).
+**Measured on the target 4090 D:** verified 1-GiB restore takes **9.11 s from HDD**,
+**2.14 s from SATA SSD**, or **0.10 s from already prepared pinned RAM**. Preparing
+that RAM hit itself takes about 10.23 s from HDD. See [raw-backed results](docs/results.md).
 
 ## Design
 
@@ -31,9 +31,10 @@ Bounded pinned-RAM LRU                    cold miss
                     Active generation
 ```
 
-- Raw, contiguous tensor bytes; no pickle, serialization of Python objects, or default quantization.
+- Raw, contiguous KV payload bytes; no pickle/object deserialization in the cache format or default quantization.
 - Preallocated, 4 KiB-aligned staging buffers protected by CUDA completion events.
-- Separate CUDA copy stream and one bounded background I/O worker.
+- Separate CUDA copy stream, one coordinator, and one bounded disk-read worker.
+- Pipelined reads overlap chunk N+1 I/O with chunk N checksum/copy, rather than disabling validation.
 - Explicit prefetch into a size-bounded pinned-RAM LRU; oversized entries decline admission.
 - Write-through persistence, padded payloads, per-chunk CRC32, JSON metadata, fsync,
   and atomic directory publication. CRC32 detects accidental corruption; it is **not authentication**.
@@ -136,17 +137,25 @@ python examples/hf_resume.py --root /your/ssd/bench --device cuda:0 \
 # Optional public pretrained model; resolves and records its immutable commit.
 python examples/hf_resume.py --root /your/ssd/bench --device cuda:0 \
   --model Qwen/Qwen2.5-0.5B-Instruct --tokens 8192 --direct-io \
+  --revision 7ae557604adf67be50417f59c2c2f167def9a775 \
   --output results/qwen-half-b.json
 ```
 
-The adapter handles **uniform full-attention DynamicCache only**. It packs all layers, restores
+The adapter handles **uniform full-retained-history DynamicCache only**. It packs all layers, restores
 exact bytes, checks next-token logits, and compares a greedy continuation. It is not a vLLM plugin
 or a hybrid/recurrent/sliding-window cache adapter. Packing overhead and durable store time are
 reported separately. Pretrained runs use seeded synthetic token IDs, not private user prompts.
+Static, sliding/rolling-eviction, and hybrid cache objects are rejected. A model may use local
+attention masks while retaining the full K/V history, as in the tested TinyStories GPT-Neo checkpoint.
 
 `examples/queued_resume.py` additionally generates from each restored session while prefetching
 the next known queued session. Its service TTFT excludes arrival-queue waiting time; total wall
 time includes initial prefetch. This is not a prediction oracle or a production serving benchmark.
+
+The measured pretrained correctness/queue example uses
+[TinyStories-1M](https://huggingface.co/roneneldan/TinyStories-1M), pinned to commit
+`77f1b168e219585646439073245fe87e56b3023e`, with `--attn-implementation eager --tokens 1024`.
+The Qwen invocation above is an optional larger-model recipe, **not a completed pretrained benchmark**.
 
 ## Admission and cost
 

@@ -107,6 +107,16 @@ def test_noncontiguous_and_empty_rejected(tmp_path):
             store.put(key(), torch.empty(0))
 
 
+def test_engine_owned_inference_tensor_destination(tmp_path):
+    with torch.inference_mode():
+        source = torch.randn(40)
+        destination = torch.empty_like(source)
+    with TieredStore(tmp_path, chunk_bytes=4096) as store:
+        store.put(key(), source)
+        store.get(key(), out=destination)
+        assert torch.equal(source, destination)
+
+
 def test_exclusive_root_lock_and_close(tmp_path):
     with TieredStore(tmp_path) as store:
         with pytest.raises(RuntimeError, match="lock"):

@@ -1,0 +1,26 @@
+{
+  "package_version": "0.2.0",
+  "python_source_and_tests_sha256": "ba4d2eb04c9815f58d937f3508c2ca115d4ad92c37c2397a6fd4183b1d48609c",
+  "hash_scope": "relative file paths and bytes in src/tests/examples Python files plus pyproject.toml",
+  "cuda_test_run": {
+    "tests": 54,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 5.396,
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "transformers": "5.20.1",
+    "numpy": "2.5.4",
+    "pytest": "9.1.1"
+  },
+  "local_macos_cpu": {
+    "passed": 49,
+    "skipped": 5,
+    "failed": 0
+  },
+  "model_check": "Byte equality plus logits and continuation versus original model-produced cache",
+  "exclusions": "No production HTTP load test, large pretrained model, or model-quality benchmark."
+}

@@ -1,0 +1,12 @@
+{
+  "model": "roneneldan/TinyStories-1M",
+  "revision": "77f1b168e219585646439073245fe87e56b3023e",
+  "weight_filename": "pytorch_model.bin",
+  "weight_bytes": 48578813,
+  "official_lfs_sha256": "07f9609ea882b8163ff3b23d40e2b82cb715d409631beb15c84b164f3877dae7",
+  "local_and_remote_sha256_verified": true,
+  "loading": "Hugging Face built-in GPT-Neo implementation, trust_remote_code=false, weights_only=true",
+  "legacy_checkpoint_note": "Legacy non-learned causal-mask buffers are reported as unexpected by current Transformers; no model weights are redistributed here.",
+  "source": "https://huggingface.co/roneneldan/TinyStories-1M",
+  "weights_redistributed_in_repository": false
+}

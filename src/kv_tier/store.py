@@ -130,6 +130,7 @@ class TieredStore:
         device: str = "cpu",
         direct_io: bool = False,
         verify: bool = True,
+        pipeline_reads: bool = True,
     ):
         if ram_bytes < 0 or disk_bytes <= 0:
             raise ValueError("RAM budget must be nonnegative and disk budget positive")
@@ -155,6 +156,7 @@ class TieredStore:
         self.staging_slots = staging_slots
         self.direct_io = direct_io
         self.verify = verify
+        self.pipeline_reads = pipeline_reads
         self._ram: OrderedDict[str, torch.Tensor] = OrderedDict()
         self._disk: OrderedDict[str, Metadata] = OrderedDict()
         self._ram_used = 0
@@ -179,6 +181,7 @@ class TieredStore:
                     self._disk_used += meta.stored_bytes
             self._evict_disk(0)
             self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-tier")
+            self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-read")
             self._buffers: list[torch.Tensor] = []
             self._stream = None
         except BaseException:
@@ -197,6 +200,7 @@ class TieredStore:
                 return
             self._closed = True
         self._pool.shutdown(wait=True)
+        self._reader.shutdown(wait=True)
         self._ram.clear()
         self._buffers.clear()
         self._lock.close()
@@ -268,6 +272,7 @@ class TieredStore:
                 "pinned": self.device.type == "cuda",
                 "direct_io": self.direct_io,
                 "verify": self.verify,
+                "pipeline_reads": self.pipeline_reads,
             }
         ).result()
 
@@ -450,33 +455,55 @@ class TieredStore:
         flags = os.O_RDONLY | (getattr(os, "O_DIRECT", 0) if self.direct_io else 0)
         descriptor = os.open(self.root / meta.key / "data.bin", flags)
         events = [None] * len(self._buffers)
+        count = len(meta.crc32_chunks)
+        pipelined = (
+            self.pipeline_reads
+            and count > 1
+            and (host_storage is not None or len(self._buffers) > 1)
+        )
+        pending = None
+
+        def fill(index):
+            offset = index * meta.chunk_bytes
+            length = min(meta.nbytes - offset, meta.chunk_bytes)
+            padded = _round_up(length)
+            slot = index % len(self._buffers)
+            if events[slot] is not None:
+                events[slot].synchronize()
+            if host_storage is not None:
+                buffer = host_storage[offset : offset + padded]
+            elif padded <= self.chunk_bytes:
+                buffer = self._buffers[slot][:padded]
+            else:
+                raise ValueError("reopen with chunk_bytes >= the stored chunk_bytes")
+            view = _view(buffer)
+            done = 0
+            while done < padded:
+                if hasattr(os, "preadv"):
+                    amount = os.preadv(descriptor, [view[done:]], offset + done)
+                else:
+                    os.lseek(descriptor, offset + done, os.SEEK_SET)
+                    amount = os.readv(descriptor, [view[done:]])
+                if amount == 0:
+                    raise CacheCorruption("unexpected EOF in tensor payload")
+                done += amount
+            return buffer, view, length, offset, slot
+
         try:
             # Read chunks using the persisted chunk size, independent of the new
             # process's staging size. This also preserves checksum boundaries.
+            if pipelined:
+                pending = self._reader.submit(fill, 0)
             for index, expected_hash in enumerate(meta.crc32_chunks):
-                offset = index * meta.chunk_bytes
-                length = min(meta.nbytes - offset, meta.chunk_bytes)
-                padded = _round_up(length)
-                slot = index % len(self._buffers)
-                if events[slot] is not None:
-                    events[slot].synchronize()
-                if host_storage is not None:
-                    buffer = host_storage[offset : offset + padded]
-                elif padded <= self.chunk_bytes:
-                    buffer = self._buffers[slot][:padded]
+                if pipelined:
+                    buffer, view, length, offset, slot = pending.result()
+                    pending = None
+                    if index + 1 < count:
+                        # Slot reuse is checked inside fill. The next disk read
+                        # can overlap this chunk's checksum and CUDA transfer.
+                        pending = self._reader.submit(fill, index + 1)
                 else:
-                    raise ValueError("reopen with chunk_bytes >= the stored chunk_bytes")
-                view = _view(buffer)
-                done = 0
-                while done < padded:
-                    if hasattr(os, "preadv"):
-                        amount = os.preadv(descriptor, [view[done:]], offset + done)
-                    else:
-                        os.lseek(descriptor, offset + done, os.SEEK_SET)
-                        amount = os.readv(descriptor, [view[done:]])
-                    if amount == 0:
-                        raise CacheCorruption("unexpected EOF in tensor payload")
-                    done += amount
+                    buffer, view, length, offset, slot = fill(index)
                 if self.verify and f"{zlib.crc32(view[:length]):08x}" != expected_hash:
                     raise CacheCorruption(f"payload checksum mismatch at chunk {index}")
                 if host_storage is None:
@@ -490,7 +517,11 @@ class TieredStore:
                     else:
                         destination[offset : offset + length].copy_(buffer[:length])
         finally:
-            for event in events:
-                if event is not None:
-                    event.synchronize()
-            os.close(descriptor)
+            try:
+                if pending is not None:
+                    pending.result()
+            finally:
+                for event in events:
+                    if event is not None:
+                        event.synchronize()
+                os.close(descriptor)

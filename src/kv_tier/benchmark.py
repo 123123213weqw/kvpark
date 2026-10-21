@@ -93,6 +93,7 @@ def run(args):
             "cpu_threads": args.cpu_threads,
             "synthetic_transport_only": True,
             "gpu_exclusive": False,
+            "pipeline_reads": args.pipeline_reads,
         },
         "cases": [],
     }
@@ -120,6 +121,7 @@ def run(args):
                 staging_slots=args.slots,
                 direct_io=args.direct_io,
                 verify=args.verify,
+                pipeline_reads=args.pipeline_reads,
             ) as store:
                 start = time.perf_counter()
                 store.put(key, source)
@@ -189,6 +191,7 @@ def main():
     parser.add_argument("--cpu-threads", type=int, default=2)
     parser.add_argument("--direct-io", action="store_true")
     parser.add_argument("--verify", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--pipeline-reads", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--output")
     args = parser.parse_args()
     if min(args.sizes_mib + [args.chunk_mib, args.slots, args.repeats, args.cpu_threads]) <= 0:

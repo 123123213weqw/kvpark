@@ -1,0 +1,174 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-21T16:51:27.580551+00:00",
+  "hardware": {
+    "os": "Linux",
+    "kernel": "7.0.0-38-generic",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gpu_total_bytes": 25250627584,
+    "nvidia_smi_start": "3, 3, 16, 14886 MiB, 0 %, 580.178.04"
+  },
+  "configuration": {
+    "storage_label": "ssd-v02-serial",
+    "direct_io": true,
+    "verification": true,
+    "chunk_mib": 8,
+    "staging_slots": 2,
+    "repeats": 5,
+    "cpu_threads": 2,
+    "synthetic_transport_only": true,
+    "gpu_exclusive": false,
+    "pipeline_reads": false
+  },
+  "cases": [
+    {
+      "size_mib": 256,
+      "nbytes": 268435456,
+      "durable_store_ms": 985.768559970893,
+      "disk_direct": {
+        "samples_ms": [
+          784.700240008533,
+          787.4962319619954,
+          795.5482919933274,
+          783.8053780142218,
+          787.8746429923922
+        ],
+        "median_ms": 787.4962319619954,
+        "min_ms": 783.8053780142218,
+        "p95_ms": 795.5482919933274,
+        "GB_per_s": 0.34087205132551635
+      },
+      "prefetch_to_ram_ms": 1089.2968430416659,
+      "ram_hit": {
+        "samples_ms": [
+          29.234462999738753,
+          27.16856694314629,
+          27.043006964959204,
+          26.694074040278792,
+          26.38466900680214
+        ],
+        "median_ms": 27.043006964959204,
+        "min_ms": 26.38466900680214,
+        "p95_ms": 29.234462999738753,
+        "GB_per_s": 9.926242904416046
+      },
+      "store_stats": {
+        "ram_used_bytes": 268439552,
+        "ram_budget_bytes": 268443648,
+        "ram_entries": 1,
+        "disk_used_bytes": 268435456,
+        "disk_budget_bytes": 536879104,
+        "disk_entries": 1,
+        "staging_bytes": 16785408,
+        "pinned": true,
+        "direct_io": true,
+        "verify": true,
+        "pipeline_reads": false
+      },
+      "pinned_copy_baseline": {
+        "samples_ms": [
+          24.25752195995301,
+          24.26302805542946,
+          24.251883034594357,
+          24.247899069450796,
+          24.234997923485935
+        ],
+        "median_ms": 24.251883034594357,
+        "min_ms": 24.234997923485935,
+        "p95_ms": 24.26302805542946,
+        "GB_per_s": 11.068643849926515
+      },
+      "pageable_copy_baseline": {
+        "samples_ms": [
+          34.85395200550556,
+          32.91349008213729,
+          33.42553891707212,
+          34.3216999899596,
+          33.03850907832384
+        ],
+        "median_ms": 33.42553891707212,
+        "min_ms": 32.91349008213729,
+        "p95_ms": 34.85395200550556,
+        "GB_per_s": 8.030849006383452
+      },
+      "byte_exact": true
+    },
+    {
+      "size_mib": 1024,
+      "nbytes": 1073741824,
+      "durable_store_ms": 3967.0580490492284,
+      "disk_direct": {
+        "samples_ms": [
+          3144.6443640161306,
+          3147.8090489981696,
+          3144.9765319703147,
+          3156.111757038161,
+          3146.4242769870907
+        ],
+        "median_ms": 3146.4242769870907,
+        "min_ms": 3144.6443640161306,
+        "p95_ms": 3156.111757038161,
+        "GB_per_s": 0.3412577991637475
+      },
+      "prefetch_to_ram_ms": 4181.760058971122,
+      "ram_hit": {
+        "samples_ms": [
+          105.7051110547036,
+          102.85227000713348,
+          102.88117500022054,
+          99.71786697860807,
+          99.56943895667791
+        ],
+        "median_ms": 102.85227000713348,
+        "min_ms": 99.56943895667791,
+        "p95_ms": 105.7051110547036,
+        "GB_per_s": 10.439651199973797
+      },
+      "store_stats": {
+        "ram_used_bytes": 1073745920,
+        "ram_budget_bytes": 1073750016,
+        "ram_entries": 1,
+        "disk_used_bytes": 1073741824,
+        "disk_budget_bytes": 2147491840,
+        "disk_entries": 1,
+        "staging_bytes": 16785408,
+        "pinned": true,
+        "direct_io": true,
+        "verify": true,
+        "pipeline_reads": false
+      },
+      "pinned_copy_baseline": {
+        "samples_ms": [
+          97.8470150148496,
+          96.96019592229277,
+          96.96095704566687,
+          96.9989919103682,
+          96.95204498711973
+        ],
+        "median_ms": 96.96095704566687,
+        "min_ms": 96.95204498711973,
+        "p95_ms": 97.8470150148496,
+        "GB_per_s": 11.073960661241069
+      },
+      "pageable_copy_baseline": {
+        "samples_ms": [
+          130.9895960148424,
+          129.76580497343093,
+          129.47415199596435,
+          130.2964489441365,
+          129.5822480460629
+        ],
+        "median_ms": 129.76580497343093,
+        "min_ms": 129.47415199596435,
+        "p95_ms": 130.9895960148424,
+        "GB_per_s": 8.274458931764379
+      },
+      "byte_exact": true
+    }
+  ]
+}

@@ -3,6 +3,35 @@
 Measured on 2026-10-22 (Asia/Shanghai). All numbers below come from committed JSON in
 [`results/4090d`](../results/4090d/). Medians are not guarantees or production p99 estimates.
 
+## Current v0.2 result: validated read/checksum pipelining
+
+| 1-GiB restore path | Median | Preparing the pinned-RAM hit |
+| --- | ---: | ---: |
+| HDD direct → GPU, CRC32 enabled | 9106.82 ms | 10234.42 ms |
+| SATA SSD direct → GPU, CRC32 enabled | 2142.57 ms | 3153.60 ms |
+| Prepared pinned RAM → GPU | 100.67–101.73 ms | Already paid above |
+
+Raw sources: [`hdd-v02-pipelined.json`](../results/4090d/hdd-v02-pipelined.json),
+[`ssd-v02-pipelined.json`](../results/4090d/ssd-v02-pipelined.json).
+RAM-hit throughput is about 10.6 GB/s. Preparing a RAM hit is not free, and the HDD
+cannot provide an unpredictable 1-GiB cold restore in 100 ms.
+
+The v0.2 controlled SSD comparison keeps validation enabled in **both** modes:
+
+| Payload | Serial disk read/checksum | Overlapped disk read/checksum |
+| --- | ---: | ---: |
+| 256 MiB | 787.50 ms | 543.45 ms |
+| 1 GiB | 3146.42 ms | 2142.57 ms |
+
+The 1-GiB case reduces restore latency by about **31.9%**. Rather than removing
+checksums, one bounded read worker reads the next free slot while the coordinator
+validates/transfers the current chunk. Outstanding reads and CUDA copies are drained
+even on error. The HDD shows no material improvement in this small shared-node sample;
+its backing-device service time still dominates.
+
+The remaining transport tables below preserve the initial v0.1 baselines and tuning
+sweep. They are historical observations, not claims that the current default is serial.
+
 ## Hardware and experiment conditions
 
 - GPU: NVIDIA GeForce RTX 4090 D, 24 GB GDDR6X; node reports PCIe Gen3 x16.
@@ -16,7 +45,7 @@ Measured on 2026-10-22 (Asia/Shanghai). All numbers below come from committed JS
 - Two 8 MiB staging buffers; five measured repeats per main case; source/output allocation
   outside timed restores. Each transport case passed byte equality.
 
-## Exact-byte transport: cold disk versus prepared RAM
+## v0.1 baseline: exact-byte transport
 
 | Payload | HDD direct → GPU | SATA SSD direct → GPU | Pinned-RAM hit → GPU |
 | --- | ---: | ---: | ---: |
@@ -32,13 +61,15 @@ Preparing that 1 GiB RAM hit took **10167.98 ms from HDD**, or **4118.01 ms from
 including pinned allocation and checksum processing. Those costs must be supplied as
 look-ahead slack or counted on the request's critical path. They are not free.
 
-## Checksum cost
+## v0.1 checksum-cost diagnosis
 
 On this CPU/SATA combination, disabling read-side CRC32 reduced a 1 GiB SSD restore from
 3056.91 ms to 2143.58 ms. That unchecked path is explicitly labeled in
 [`ssd-no-read-checksum.json`](../results/4090d/ssd-no-read-checksum.json); it is not the
 default verified path. Measured transfers still passed post-run byte equality. Do not silently
 compare unchecked results with validated cache implementations.
+The current v0.2 path achieves approximately this SSD I/O rate **with** CRC32 enabled
+by overlapping reads and validation; unchecked results are not its headline performance.
 
 ## Staging sweep: 256 MiB SATA direct reads
 
@@ -55,7 +86,7 @@ Eight MiB × two is a reasonable conservative default here: 32 MiB × two consum
 four times the staging capacity for less than 1% observed improvement. The small number
 of repeats and shared workload do not establish statistical significance.
 
-## Attention correctness
+## Baseline attention correctness
 
 The committed tiny-Llama CUDA test restores an actual full-attention KV cache, not just
 an arbitrary transport buffer. The restored bytes and greedy continuation match exactly;
@@ -64,7 +95,62 @@ not production model-quality evidence.
 
 General-purpose zlib level 1 compressed that 523264-byte FP16 KV sample by only 1.13×,
 taking about 32 ms to encode. This does not justify default compression for the fast path.
-A pretrained-model sample and queued-session experiment are being evaluated separately.
+Pretrained-model and queued-session results are reported separately below; they must not
+be conflated with the 1-GiB synthetic transport cases.
+
+## Pretrained-model restore and a known-queue experiment
+
+Model: [`roneneldan/TinyStories-1M`](https://huggingface.co/roneneldan/TinyStories-1M),
+commit `77f1b168e219585646439073245fe87e56b3023e`, FP16 on the actual 4090 D.
+Its 1023-token snapshot is **2095104 bytes**, about 2 MiB, not 1 GiB. This is trained-model
+execution validation, **not a large-model serving benchmark**. The optional Qwen recipe was
+not GPU-validated; its separate provenance record explicitly says so.
+
+Compared directly with the **original model-produced cache before packing/storage**:
+
+- Restored K/V bytes match exactly.
+- Maximum next-token logit difference is **0.0**.
+- The greedy continuation matches the original cache.
+- Both queue modes match the original cache for all four sessions, each generating 64 tokens.
+
+In the small single-prefix experiment, median prefix recomputation is **10.84 ms**, cold
+SATA restore **11.69 ms**, and prepared-RAM restore **1.05 ms**. Thus cold restore does
+**not** beat recomputation for this small prefix. The admission policy must be allowed to skip it.
+See [`tinystories-cuda.json`](../results/4090d/tinystories-cuda.json).
+
+The queue is known in advance; all four requests arrive at each mode's measured start.
+The next cache is prefetched while the current session generates. Initial prefetch is counted.
+
+| Backing/mode | Median service TTFT | Median arrival/queue-inclusive TTFT | Total wall time |
+| --- | ---: | ---: | ---: |
+| HDD, on-demand | 42.00 ms | 835.55 ms | 2156.99 ms |
+| HDD, look-ahead | 11.05 ms | 800.22 ms | 2083.12 ms |
+| SATA, on-demand | 19.12 ms | 977.55 ms | 2556.28 ms |
+| SATA, look-ahead | 12.49 ms | 977.21 ms | 2456.32 ms |
+
+The HDD service-only median improves substantially, but total wall time improves by only
+about **3.4%**. In the SATA trace, median queue-inclusive TTFT is almost unchanged despite
+better service-only latency. These four-request shared-node samples are feasibility evidence,
+not p99 estimates. Cross-tier wall-time differences also include background GPU/CPU activity;
+they do not establish that SATA is slower than HDD. Small payloads may fit device-controller caches.
+
+Raw traces: [`tinystories-queued-hdd.json`](../results/4090d/tinystories-queued-hdd.json),
+[`tinystories-queued-ssd.json`](../results/4090d/tinystories-queued-ssd.json).
+The pretrained FP16 KV sample compresses only **1.086×** with zlib level 1 and takes
+about **83.78 ms** to encode. Default compression would not help this measured fast path.
+
+## Regression and reproducibility
+
+**54 tests passed on the actual CUDA node**, with no skips, errors, or failures.
+Local macOS CPU testing passes 49 and skips 5 hardware/platform-specific cases.
+[`validation-summary.json`](../results/4090d/validation-summary.json) records a matching
+SHA-256 of the tested Python source/tests plus package configuration, runtime versions,
+and sanitized test counts. No hostnames, private paths, or prompts are included.
+
+Tests cover direct I/O tails, exact dtypes, quotas, immutable keys, corrupt/truncated data,
+partial reads, failed commits, exclusive ownership, inference-mode destinations, GPU ring
+reuse and stream dependencies, actual read/checksum overlap, error-path read draining,
+unsupported cache rejection, offline pinned-commit identity, and original-cache model logits.
 
 ## Implication
 

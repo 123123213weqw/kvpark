@@ -51,6 +51,27 @@ Each pause/store writes the snapshot again in the current full-snapshot design. 
 chat snapshots can produce substantial write amplification. Append-only sealed token blocks and
 prefix-sharing are future work; do not claim those savings for this release.
 
+## Prefetch cannot cure a sustained bandwidth deficit
+
+Let each cold snapshot contain `S` bytes, the resume arrival rate be `R` requests/s,
+the effective disk read rate be `B` bytes/s, and the RAM/prefix-reuse hit fraction be `h`.
+A necessary long-run storage condition is:
+
+```text
+(1 - h) × R × S < B
+```
+
+For the measured 1-GiB HDD path (about 9.1 seconds per cold restore), one resume per
+second would require roughly **89% or better RAM/reuse hits** just to avoid a disk backlog,
+before accounting for durable stores or other disk users. With all misses, its sustainable
+rate is only about one such restore every 9.1 seconds. A longer look-ahead queue changes
+when that cost is paid, not the underlying throughput limit.
+
+Uniform random access across a huge catalog with a tiny RAM pool will not magically produce
+that hit rate. Measure locality and queue-inclusive latency. If predicted reads cannot keep
+up, prefer recompute, more warm capacity, a faster backing device, or a smaller validated
+cache representation rather than hiding the backlog behind a service-only TTFT statistic.
+
 ## What changes were made to the experiment node
 
 - A separate experiment directory and owned temporary cache directories were created.

@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.."
 : "${SSD_ROOT:?Set SSD_ROOT}"
 : "${MODEL_CACHE:?Set MODEL_CACHE to the Hugging Face cache containing the pinned model}"
 : "${RESULT_DIR:=results/consumer-cuda}"
+mkdir -p private "$RESULT_DIR"
+rm -f private/pretrained.complete
 revision=7ae557604adf67be50417f59c2c2f167def9a775
 weight="$MODEL_CACHE/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/$revision/model.safetensors"
 # A detached run may wait for an in-flight rsync's atomic final rename.

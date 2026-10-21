@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 : "${SSD_ROOT:?Set SSD_ROOT to a writable directory on the SSD device}"
 : "${RESULT_DIR:=results/consumer-cuda}"
 mkdir -p "$RESULT_DIR" private/test-deps
+rm -f private/matrix.complete
 export PYTHONPATH="$(pwd)/private/test-deps:$(pwd)/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export OMP_NUM_THREADS=2

@@ -20,6 +20,9 @@
 15. A tiny randomly initialized model proves execution correctness, not model quality or production benefit.
 16. Cost arithmetic must identify supplied prices and exclusions. Installed capacity has zero incremental
     purchase cost, not zero power, wear, redundancy, maintenance, or opportunity cost.
+17. In a known-queue experiment, report both service-only TTFT and arrival/queue-inclusive TTFT.
+    All queued requests arrive at each mode's measured start; initial prefetch and subsequent waiting
+    therefore count toward arrival latency. Also report total wall time, not only the best fast path.
 
 Transport GB/s uses decimal gigabytes; MiB/GiB capacities use binary units. Published JSON intentionally
 omits hostnames, addresses, usernames, private prompts, token IDs, and model-cache contents.

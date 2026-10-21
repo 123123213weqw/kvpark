@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "timestamp_utc": "2026-10-21T16:52:41.779804+00:00",
+  "hardware": {
+    "os": "Linux",
+    "kernel": "7.0.0-38-generic",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gpu_total_bytes": 25250627584,
+    "nvidia_smi_start": "3, 3, 16, 14886 MiB, 0 %, 580.178.04"
+  },
+  "configuration": {
+    "storage_label": "hdd-v02-pipelined",
+    "direct_io": true,
+    "verification": true,
+    "chunk_mib": 8,
+    "staging_slots": 2,
+    "repeats": 3,
+    "cpu_threads": 2,
+    "synthetic_transport_only": true,
+    "gpu_exclusive": false,
+    "pipeline_reads": true
+  },
+  "cases": [
+    {
+      "size_mib": 1024,
+      "nbytes": 1073741824,
+      "durable_store_ms": 10514.047050033696,
+      "disk_direct": {
+        "samples_ms": [
+          9103.66611101199,
+          9106.982466997579,
+          9106.81734397076
+        ],
+        "median_ms": 9106.81734397076,
+        "min_ms": 9103.66611101199,
+        "p95_ms": 9106.982466997579,
+        "GB_per_s": 0.1179052772713048
+      },
+      "prefetch_to_ram_ms": 10234.41781301517,
+      "ram_hit": {
+        "samples_ms": [
+          106.28102300688624,
+          100.67422199063003,
+          100.2407920313999
+        ],
+        "median_ms": 100.67422199063003,
+        "min_ms": 100.2407920313999,
+        "p95_ms": 106.28102300688624,
+        "GB_per_s": 10.665509032688979
+      },
+      "store_stats": {
+        "ram_used_bytes": 1073745920,
+        "ram_budget_bytes": 1073750016,
+        "ram_entries": 1,
+        "disk_used_bytes": 1073741824,
+        "disk_budget_bytes": 2147491840,
+        "disk_entries": 1,
+        "staging_bytes": 16785408,
+        "pinned": true,
+        "direct_io": true,
+        "verify": true,
+        "pipeline_reads": true
+      },
+      "pinned_copy_baseline": {
+        "samples_ms": [
+          98.10495795682073,
+          97.91101701557636,
+          98.11431891284883
+        ],
+        "median_ms": 98.10495795682073,
+        "min_ms": 97.91101701557636,
+        "p95_ms": 98.11431891284883,
+        "GB_per_s": 10.94482731925322
+      },
+      "pageable_copy_baseline": {
+        "samples_ms": [
+          132.48795899562538,
+          130.4620469454676,
+          130.32858411315829
+        ],
+        "median_ms": 130.4620469454676,
+        "min_ms": 130.32858411315829,
+        "p95_ms": 132.48795899562538,
+        "GB_per_s": 8.23030029912698
+      },
+      "byte_exact": true
+    }
+  ]
+}

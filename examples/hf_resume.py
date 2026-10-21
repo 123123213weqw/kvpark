@@ -13,7 +13,7 @@ from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 
 from kv_tier import TieredStore, cache_key
 from kv_tier.benchmark import hardware, measure
-from kv_tier.hf import pack_dynamic_cache, unpack_dynamic_cache
+from kv_tier.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
 
 
 def main():
@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--revision", default="main")
     parser.add_argument("--model-cache-dir", help="Optional Hugging Face cache directory")
     parser.add_argument("--local-files-only", action="store_true")
+    parser.add_argument("--attn-implementation", default="sdpa")
     parser.add_argument("--tokens", type=int, default=512)
     parser.add_argument("--continuation-tokens", type=int, default=8)
     parser.add_argument("--repeats", type=int, default=3)
@@ -42,8 +43,9 @@ def main():
                 args.model,
                 revision=args.revision,
                 torch_dtype=dtype,
-                attn_implementation="sdpa",
+                attn_implementation=args.attn_implementation,
                 trust_remote_code=False,
+                weights_only=True,
                 cache_dir=args.model_cache_dir,
                 local_files_only=args.local_files_only,
             )
@@ -53,9 +55,7 @@ def main():
         model_name = (
             args.model if "/" not in args.model or not Path(args.model).exists() else "local"
         )
-        revision = getattr(model.config, "_commit_hash", None)
-        if not revision:
-            raise ValueError("pretrained cache identity needs a resolved immutable model revision")
+        revision = resolve_model_revision(model.config, args.revision)
     else:
         config = LlamaConfig(
             vocab_size=512,
@@ -96,6 +96,7 @@ def main():
 
     with torch.inference_mode():
         first = model(prefix, use_cache=True, **prefill_kwargs)
+        original_cache = first.past_key_values
         synchronize()
         start = time.perf_counter()
         packed = pack_dynamic_cache(first.past_key_values)
@@ -103,10 +104,11 @@ def main():
         pack_ms = (time.perf_counter() - start) * 1000
         del first
         nbytes = packed.numel() * packed.element_size()
-        key = cache_key(signature, prefix[0].tolist(), tensor_name="all-full-attention-layers")
+        key = cache_key(signature, prefix[0].tolist(), tensor_name="all-retained-history-layers")
 
-        def continuation(snapshot):
-            cache = unpack_dynamic_cache(snapshot)
+        def continuation(snapshot=None, *, cache=None):
+            if cache is None:
+                cache = unpack_dynamic_cache(snapshot)
             current = last
             tokens = []
             first_logits = None
@@ -119,7 +121,8 @@ def main():
                 tokens.append(int(current.item()))
             return tokens, first_logits
 
-        expected_tokens, expected_logits = continuation(packed)
+        expected_tokens, expected_logits = continuation(cache=original_cache)
+        del original_cache
         report = {
             "model": model_name,
             "model_revision": revision,
@@ -132,6 +135,7 @@ def main():
             "direct_io": args.direct_io,
             "verification": True,
             "tiny_random_model": args.model is None,
+            "reference": "original model-produced cache before packing or disk storage",
             "prefill_kwargs": prefill_kwargs,
         }
         parent = Path(args.root).expanduser()

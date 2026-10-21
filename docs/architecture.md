@@ -54,11 +54,15 @@ chunk size at least as large as the largest chunk used to write its current entr
 
 ## Transfer correctness
 
-One worker owns staging buffers and the copy stream. In a restore, a slot cannot be overwritten
+One coordinator owns staging buffers and the copy stream; a single read worker can fill the next
+free slot while the coordinator checks and transfers the current chunk. In a restore, a slot cannot be overwritten
 until its previous H2D event completes. In a store, a D2H event must complete before CPU hashing
 or disk writes read its buffer. Exceptional paths drain all outstanding events before buffers
 are recycled. Caller stream dependencies are captured when submitting input/output tensors.
 An asynchronous API future completes only after payload transfer and validation finish.
+Pending disk reads are also drained on error before buffers or file descriptors are reused.
+With one staging slot, read/checksum pipelining falls back to serial operation. Use
+`pipeline_reads=False` or the benchmark's `--no-pipeline-reads` for the controlled serial path.
 
 Direct I/O is explicit and Linux-specific. It bypasses the filesystem page cache for payload
 reads, not drive-controller caches. Buffered mode may consume additional kernel page cache
@@ -66,15 +70,22 @@ outside the explicit retained-RAM budget. The pinned allocator may retain high-w
 
 ## Limits and extension points
 
-- A single cache-root owner and one I/O worker: no cross-process deduplication or RPC server.
+- A single cache-root owner, one coordinator, and one read worker: no cross-process deduplication or RPC server.
 - Full snapshots, not paged prefix suffix-sharing or append-only token deltas.
-- Shape-uniform full-attention Hugging Face adapter only; no hybrid/RWKV state adapter.
+- Shape-uniform retained-full-history Hugging Face adapter only; no static, rolling-eviction,
+  hybrid, or RWKV state adapter. Local attention masks without KV eviction can be compatible.
 - Source packing and destination allocation are explicit; transport-only timings exclude them.
 - No driver changes, service replacement, global cache dropping, unsafe unpickling, or root requirement.
 - No encryption/authentication or multi-tenant access-control server. Use an owner-private directory;
   include tenant identity in keys, and do not share a root across untrusted users.
 - No compression/quantization by default. A transport-saving codec must justify its encode/decode
   costs and, if lossy, task-quality impact.
+- The operation coordinator is FIFO, not a priority serving scheduler. A foreground hit can wait
+  behind a long archive or cold read. These are idle-worker/controlled-queue measurements, not a
+  mixed read/write latency SLA. A production engine needs admission, priorities, and backpressure.
+- A durable `put` retains its GPU input until the streamed disk write finishes. With bounded
+  staging, an HDD archive can therefore hold the input for seconds. Fast VRAM release would need
+  a separate RAM-first offload plus background persistence policy; that is not shipped here.
 
 The most useful next integration is an existing inference scheduler's upcoming-request signal,
 plus empirical restore/recompute admission curves. That is more defensible than claiming a new

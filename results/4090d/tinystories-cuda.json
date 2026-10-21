@@ -1,0 +1,86 @@
+{
+  "model": "roneneldan/TinyStories-1M",
+  "model_revision": "77f1b168e219585646439073245fe87e56b3023e",
+  "hardware": {
+    "os": "Linux",
+    "kernel": "7.0.0-38-generic",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cu126",
+    "cuda_runtime": "12.6",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gpu_total_bytes": 25250627584,
+    "nvidia_smi_start": "3, 3, 16, 15570 MiB, 6 %, 580.178.04"
+  },
+  "prompt_kind": "seeded synthetic token IDs, not private prompts",
+  "prefix_tokens": 1023,
+  "cache_bytes": 2095104,
+  "cache_shape": [
+    8,
+    2,
+    1,
+    16,
+    1023,
+    4
+  ],
+  "pack_ms": 0.5386089906096458,
+  "direct_io": true,
+  "verification": true,
+  "tiny_random_model": false,
+  "reference": "original model-produced cache before packing or disk storage",
+  "prefill_kwargs": {
+    "logits_to_keep": 1
+  },
+  "durable_store_ms": 34.770798054523766,
+  "byte_exact": true,
+  "greedy_tokens_identical": true,
+  "max_abs_logit_difference": 0.0,
+  "prefix_recompute": {
+    "samples_ms": [
+      11.305969092063606,
+      10.835358989425004,
+      10.81229595001787,
+      11.440075002610683,
+      10.843095951713622
+    ],
+    "median_ms": 10.843095951713622,
+    "min_ms": 10.81229595001787,
+    "p95_ms": 11.440075002610683,
+    "GB_per_s": 0.19322009224394016
+  },
+  "disk_restore": {
+    "samples_ms": [
+      10.906292940489948,
+      11.691352003253996,
+      11.973746004514396,
+      11.826153029687703,
+      8.444278966635466
+    ],
+    "median_ms": 11.691352003253996,
+    "min_ms": 8.444278966635466,
+    "p95_ms": 11.973746004514396,
+    "GB_per_s": 0.17920117360394933
+  },
+  "prefetch_to_ram_ms": 15.98582195583731,
+  "ram_restore": {
+    "samples_ms": [
+      1.0923739755526185,
+      1.045305049046874,
+      1.046735909767449,
+      1.1328218970447779,
+      1.0384410852566361
+    ],
+    "median_ms": 1.046735909767449,
+    "min_ms": 1.0384410852566361,
+    "p95_ms": 1.1328218970447779,
+    "GB_per_s": 2.0015593049305673
+  },
+  "lossless_zlib_level1_sample": {
+    "input_bytes": 2095104,
+    "output_bytes": 1929620,
+    "ratio": 1.085759890548398,
+    "compress_ms": 83.77729798667133,
+    "scope": "at most 16 MiB; not the transport default"
+  }
+}
