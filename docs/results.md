@@ -3,7 +3,49 @@
 Measured on 2026-10-22 (Asia/Shanghai). All numbers below come from committed JSON in
 [`results/4090d`](../results/4090d/). Medians are not guarantees or production p99 estimates.
 
-## Current v0.2 result: validated read/checksum pipelining
+## Current v0.3 result: release GPU state before disk finishes
+
+A **1 GiB random-byte synthetic archive** runs while three requests, arriving
+50 ms apart, restore the same real TinyStories KV (2095104 bytes, about 2 MiB)
+and generate eight tokens each. There are three repeats per mode/disk, alternating
+mode order. Archive columns are medians of three trials; TTFT is the median of
+nine actual arrivals, including store and single-decoder queue waits.
+
+| Backing/mode | Input reusable (ms) | Observed GPU allocation release (ms) | Durable archive (ms) | Queue-inclusive model TTFT (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| HDD, FIFO durable | 10197.59 | 10198.07 | 10197.41 | 10288.97 |
+| HDD, RAM-first | 98.08 | 98.37 | 10615.70 | 156.69 |
+| SATA SSD, FIFO durable | 4052.06 | 4052.51 | 4051.89 | 4147.14 |
+| SATA SSD, RAM-first | 97.45 | 97.75 | 4389.68 | 150.85 |
+
+The allocated-memory watcher requires at least 90% of the archive allocation to
+become unallocated; it does not claim the CUDA allocator returns reserved memory
+to the driver. See raw before/after byte counts. RAM-first's full-buffer allocation
+is inside its release timing. The retained/reserved host pool is bounded to about
+1.002 GiB for this workload, plus the approximately 16 MiB disk staging ring;
+allocator high-water and buffered-write page cache are additional.
+
+The independent hot transfer lane's queue-inclusive transport median is
+**0.88 ms (HDD archive)** / **0.91 ms (SATA archive)** for the small real KV, but
+actual queue-inclusive model TTFT remains **156.69 / 150.85 ms**. Reporting only
+that sub-millisecond memcpy would hide decoder waiting/execution. All 18 RAM-first
+resumes finish before their background archive is durable. All 36 resumes across
+both modes/disks match the original cache's bytes, next logits (max difference 0),
+and greedy continuation. Each random archive passes SHA-256 on a forced cold read
+outside the timed foreground phase.
+
+**About 0.10 seconds means GPU input release, not disk durability.** HDD persistence
+still takes about 10.62 seconds; SATA about 4.39 seconds with RAM-first. Background
+write bandwidth does not improve, and cold reads cannot preempt an in-flight write.
+The comparison is against this lab's legacy FIFO queue, not against LMCache or a
+production engine. It is not a 1 GiB real-model KV, p99, HTTP concurrency, or sustained
+load result. Existing services remain running; shared-node variability applies.
+
+Raw traces: [`tinystories-mixed-hdd.json`](../results/4090d/tinystories-mixed-hdd.json),
+[`tinystories-mixed-ssd.json`](../results/4090d/tinystories-mixed-ssd.json).
+See [write-back ownership and reproduction](writeback.md).
+
+## v0.2 restore result: validated read/checksum pipelining
 
 | 1-GiB restore path | Median | Preparing the pinned-RAM hit |
 | --- | ---: | ---: |
@@ -141,9 +183,10 @@ about **83.78 ms** to encode. Default compression would not help this measured f
 
 ## Regression and reproducibility
 
-**54 tests passed on the actual CUDA node**, with no skips, errors, or failures.
-Local macOS CPU testing passes 49 and skips 5 hardware/platform-specific cases.
-[`validation-summary.json`](../results/4090d/validation-summary.json) records a matching
+**80 tests passed on the actual CUDA node**, with no skips, errors, or failures.
+These include CPU and GPU cases, not 80 GPU-only tests. Local macOS CPU testing
+passes 74 and skips 6 hardware/platform-specific cases.
+[`validation-summary-v03.json`](../results/4090d/validation-summary-v03.json) records a matching
 SHA-256 of the tested Python source/tests plus package configuration, runtime versions,
 and sanitized test counts. No hostnames, private paths, or prompts are included.
 
@@ -151,6 +194,11 @@ Tests cover direct I/O tails, exact dtypes, quotas, immutable keys, corrupt/trun
 partial reads, failed commits, exclusive ownership, inference-mode destinations, GPU ring
 reuse and stream dependencies, actual read/checksum overlap, error-path read draining,
 unsupported cache rejection, offline pinned-commit identity, and original-cache model logits.
+New cases cover early GPU-input reference release, hot reads during blocked writes,
+RAM/pending/read admission, non-evictable dirty/failed entries, retries (including
+post-rename directory-fsync failure), bounded verification, priority/fairness,
+concurrent close, and storage cleanup even when Futures/callbacks survive.
+The historical v0.2 [54-test summary](../results/4090d/validation-summary.json) is retained.
 
 ## Implication
 

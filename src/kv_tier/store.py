@@ -22,6 +22,8 @@ from pathlib import Path
 
 import torch
 
+from .scheduler import PriorityWorker
+
 ALIGNMENT = 4096
 KEY_RE = re.compile(r"[0-9a-f]{64}\Z")
 DTYPES = {
@@ -131,6 +133,7 @@ class TieredStore:
         direct_io: bool = False,
         verify: bool = True,
         pipeline_reads: bool = True,
+        foreground_first: bool = False,
     ):
         if ram_bytes < 0 or disk_bytes <= 0:
             raise ValueError("RAM budget must be nonnegative and disk budget positive")
@@ -157,6 +160,7 @@ class TieredStore:
         self.direct_io = direct_io
         self.verify = verify
         self.pipeline_reads = pipeline_reads
+        self.foreground_first = foreground_first
         self._ram: OrderedDict[str, torch.Tensor] = OrderedDict()
         self._disk: OrderedDict[str, Metadata] = OrderedDict()
         self._ram_used = 0
@@ -180,7 +184,11 @@ class TieredStore:
                     self._disk[entry.name] = meta
                     self._disk_used += meta.stored_bytes
             self._evict_disk(0)
-            self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-tier")
+            self._pool = (
+                PriorityWorker()
+                if foreground_first
+                else ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-tier")
+            )
             self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-read")
             self._buffers: list[torch.Tensor] = []
             self._stream = None
@@ -205,10 +213,12 @@ class TieredStore:
         self._buffers.clear()
         self._lock.close()
 
-    def _submit(self, function, *args) -> Future:
+    def _submit(self, function, *args, priority=0) -> Future:
         with self._mutex:
             if self._closed:
                 raise RuntimeError("store is closed")
+            if self.foreground_first:
+                return self._pool.submit(function, *args, priority=priority)
             return self._pool.submit(function, *args)
 
     def _check_key(self, key: str) -> None:
@@ -372,9 +382,11 @@ class TieredStore:
                 os.fsync(output.fileno())
             self._fsync_directory(pending)
             pending.rename(self.root / key)
-            self._fsync_directory(self.root)
+            # Once renamed, account the visible payload even if parent fsync
+            # fails. The Future still reports that durability failure.
             self._disk[key] = meta
             self._disk_used += stored
+            self._fsync_directory(self.root)
             return meta
         finally:
             for event in events:
@@ -506,7 +518,7 @@ class TieredStore:
                     buffer, view, length, offset, slot = fill(index)
                 if self.verify and f"{zlib.crc32(view[:length]):08x}" != expected_hash:
                     raise CacheCorruption(f"payload checksum mismatch at chunk {index}")
-                if host_storage is None:
+                if host_storage is None and destination is not None:
                     if self._stream is not None:
                         with torch.cuda.stream(self._stream):
                             destination[offset : offset + length].copy_(

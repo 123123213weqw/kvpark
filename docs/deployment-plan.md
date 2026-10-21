@@ -36,6 +36,19 @@ Increase the retained pool only after observing reuse and pinned-memory high-wat
    transparent solution. Use explicit active-cache offload/CPU-attention/quantization and measure its
    token-generation penalty separately.
 
+## Fast pause without pinning GPU state behind HDD
+
+Use `RamFirstStore.offload_async` when the reserved host working set fits. Wait
+for `released`, drop every caller GPU alias, and let the archive finish in the
+background. Reserve a finite number of pending snapshots and reject admission
+when dirty RAM cannot be reclaimed. A foreground RAM resume uses an independent
+copy lane. A cold miss may still wait for an in-flight disk write. This is not a
+replacement for a production engine scheduler; see [write-back](writeback.md).
+
+On persistence failure the RAM-only snapshot remains protected/readable. Observe
+the durable Future, retry or explicitly discard; do not sleep through an
+unbounded error backlog. Context close drains and reports unresolved failures.
+
 ## Capacity arithmetic without invented prices
 
 A 32-layer, 8-KV-head, 128-dimension FP16 cache costs 128 KiB per token. At 8192 tokens,

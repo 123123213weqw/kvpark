@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kv-tier-lab"
-version = "0.2.0"
+version = "0.3.0"
 description = "Measured, bounded RAM/disk KV snapshot storage for consumer CUDA GPUs"
 readme = "README.md"
 requires-python = ">=3.10"

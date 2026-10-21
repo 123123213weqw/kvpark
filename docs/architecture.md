@@ -46,7 +46,7 @@ removed. A corrupt complete entry raises an explicit error; the lab does not sil
 it. An engine should turn that error into a cache miss and recompute. Filesystem errors and
 quota eviction can still lose disposable cache data; this is not a redundant database.
 
-RAM entries are populated only by explicit prefetch; foreground disk gets do not implicitly
+In `TieredStore`, RAM entries are populated only by explicit prefetch; foreground disk gets do not implicitly
 admit the entire snapshot. This avoids polluting a small pinned pool with one-off restores.
 Disk LRU order is process-local; after restart, initial ordering follows directory mtimes.
 Snapshots larger than the configured disk budget are rejected. Reopen a store with a staging
@@ -54,7 +54,7 @@ chunk size at least as large as the largest chunk used to write its current entr
 
 ## Transfer correctness
 
-One coordinator owns staging buffers and the copy stream; a single read worker can fill the next
+In `TieredStore`, one coordinator owns staging buffers and the copy stream; a single read worker can fill the next
 free slot while the coordinator checks and transfers the current chunk. In a restore, a slot cannot be overwritten
 until its previous H2D event completes. In a store, a D2H event must complete before CPU hashing
 or disk writes read its buffer. Exceptional paths drain all outstanding events before buffers
@@ -80,12 +80,13 @@ outside the explicit retained-RAM budget. The pinned allocator may retain high-w
   include tenant identity in keys, and do not share a root across untrusted users.
 - No compression/quantization by default. A transport-saving codec must justify its encode/decode
   costs and, if lossy, task-quality impact.
-- The operation coordinator is FIFO, not a priority serving scheduler. A foreground hit can wait
-  behind a long archive or cold read. These are idle-worker/controlled-queue measurements, not a
-  mixed read/write latency SLA. A production engine needs admission, priorities, and backpressure.
-- A durable `put` retains its GPU input until the streamed disk write finishes. With bounded
-  staging, an HDD archive can therefore hold the input for seconds. Fast VRAM release would need
-  a separate RAM-first offload plus background persistence policy; that is not shipped here.
+- The original `TieredStore` coordinator remains FIFO. Its durable put retains
+  GPU input until the disk operation completes. This API is unchanged for compatibility.
+- v0.3 adds opt-in [RAM-first write-back](writeback.md): two milestones, bounded
+  dirty RAM/archive/read admission, independent foreground RAM copies, and
+  non-preemptive disk priorities with a bounded starvation guard. A cold read
+  may still wait behind an in-flight archive. Full RAM residency costs capacity;
+  release does not mean durable, nor does priority create storage bandwidth.
 
 The most useful next integration is an existing inference scheduler's upcoming-request signal,
 plus empirical restore/recompute admission curves. That is more defensible than claiming a new

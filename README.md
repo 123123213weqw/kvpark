@@ -1,7 +1,7 @@
 # KV Tier Lab
 
 **Cheap, exact KV snapshot storage with a measured disk → pinned RAM → CUDA
-restore path.** This project targets consumer GPUs and reused/paused prefixes,
+restore path, plus bounded RAM-first offload.** This project targets consumer GPUs and reused/paused prefixes,
 not the fiction that a hard drive can replace active GPU memory at no cost.
 
 > Experimental research prototype. RTX 4090 D uses GDDR6X, **not HBM**.
@@ -10,6 +10,12 @@ not the fiction that a hard drive can replace active GPU memory at no cost.
 **Measured on the target 4090 D:** verified 1-GiB restore takes **9.11 s from HDD**,
 **2.14 s from SATA SSD**, or **0.10 s from already prepared pinned RAM**. Preparing
 that RAM hit itself takes about 10.23 s from HDD. See [raw-backed results](docs/results.md).
+
+**New in v0.3:** while archiving 1 GiB to HDD, RAM-first makes the GPU input
+reusable in **98 ms**, instead of waiting about **10.2 s** for the legacy FIFO put.
+Concurrent real TinyStories resumes see median queue-inclusive TTFT **157 ms vs
+10.29 s** in this small controlled workload. The actual model KV is about 2 MiB,
+not 1 GiB; disk durability still takes **10.62 s**. [Mixed traces and limits](docs/results.md).
 
 ## Design
 
@@ -33,10 +39,10 @@ Bounded pinned-RAM LRU                    cold miss
 
 - Raw, contiguous KV payload bytes; no pickle/object deserialization in the cache format or default quantization.
 - Preallocated, 4 KiB-aligned staging buffers protected by CUDA completion events.
-- Separate CUDA copy stream, one coordinator, and one bounded disk-read worker.
+- Serialized disk staging/read worker; opt-in independent D2H and hot-H2D lanes.
 - Pipelined reads overlap chunk N+1 I/O with chunk N checksum/copy, rather than disabling validation.
 - Explicit prefetch into a size-bounded pinned-RAM LRU; oversized entries decline admission.
-- Write-through persistence, padded payloads, per-chunk CRC32, JSON metadata, fsync,
+- Durable write-through or RAM-first background persistence, padded payloads, per-chunk CRC32, JSON metadata, fsync,
   and atomic directory publication. CRC32 detects accidental corruption; it is **not authentication**.
 - Linux `O_DIRECT` reads can measure actual backing-device I/O instead of reporting page-cache
   hits as SSD performance. Requested direct I/O never silently falls back.
@@ -55,7 +61,7 @@ The package does not require a custom CUDA extension, kernel module, Rust compil
 ```bash
 python -m pip install -e '.[test,demo]'
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
-python -m ruff check src tests examples
+python -m ruff check src tests examples scripts
 ```
 
 The CPU suite runs without CUDA; GPU ring-buffer and stream-dependency tests run when CUDA exists.
@@ -103,6 +109,31 @@ The constructor's `ram_bytes` bounds the physical storage of retained RAM entrie
 their alignment slack. Persistent staging adds roughly `slots × (chunk_bytes + 4096)` bytes.
 PyTorch can retain freed pinned allocations in its allocator; process RSS/pinned high-water
 is not guaranteed to shrink after eviction. GPU output tensors are caller/engine-owned.
+
+## RAM-first fast GPU release (v0.3)
+
+`TieredStore.put_async` is still durable/write-through. To stop waiting for disk
+before releasing a paused session's VRAM, opt into **`RamFirstStore`**:
+
+```python
+from kv_tier import CacheBusy, RamFirstStore
+
+with RamFirstStore("/data/my-kv-cache", device="cuda:0", ram_bytes=2 * 1024**3,
+                   disk_bytes=100 * 1024**3, max_pending=2, max_reads=8) as store:
+    handle = store.offload_async(key, kv)  # May raise CacheBusy; nothing then accepted.
+    handle.released.result()             # Exact owned RAM copy, D2H completed.
+    del kv                               # Drop all caller aliases to release allocation.
+    restored = store.get(key)             # Can read RAM while disk write is running.
+    handle.durable.result()              # Only now crash-safe on backing storage.
+```
+
+Dirty/failed RAM copies are protected from eviction; admission is bounded by RAM,
+pending archives, and outstanding reads. RAM hits use an independent foreground
+lane. Cold reads jump queued archives, but cannot interrupt an in-flight disk
+write. Failed persistence remains readable in RAM and can be retried explicitly.
+**Released is not durable.** See [ownership, failure handling, backpressure, and
+mixed-workload reproduction](docs/writeback.md). This needs RAM for a full snapshot;
+when unavailable, retain the GPU state, recompute later, or use the slower streamed path.
 
 ## Reproduce transport measurements
 
@@ -188,7 +219,7 @@ evaluating existing connectors rather than replacing them with this lab:
   do not assume a GeForce GPU has a supported direct disk-to-VRAM DMA path. This lab uses CPU staging.
 
 See [architecture](docs/architecture.md), [benchmark methodology](docs/methodology.md),
-the [low-cost deployment plan](docs/deployment-plan.md), and [measured results](docs/results.md).
+the [RAM-first write-back design](docs/writeback.md), the [low-cost deployment plan](docs/deployment-plan.md), and [measured results](docs/results.md).
 **Do not interpret synthetic transport throughput
 as production tokens/s, TTFT, model-quality, or tail-latency evidence.**
 

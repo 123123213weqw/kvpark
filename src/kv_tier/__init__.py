@@ -2,5 +2,14 @@
 
 from .identity import cache_key
 from .store import CacheCorruption, TieredStore
+from .writeback import CacheBusy, Offload, PersistenceError, RamFirstStore
 
-__all__ = ["CacheCorruption", "TieredStore", "cache_key"]
+__all__ = [
+    "CacheBusy",
+    "CacheCorruption",
+    "Offload",
+    "PersistenceError",
+    "RamFirstStore",
+    "TieredStore",
+    "cache_key",
+]

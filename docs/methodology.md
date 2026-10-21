@@ -24,5 +24,16 @@
     All queued requests arrive at each mode's measured start; initial prefetch and subsequent waiting
     therefore count toward arrival latency. Also report total wall time, not only the best fast path.
 
+18. In RAM-first experiments, separately measure input-reusable completion,
+    observed allocated-GPU-byte release, and durable completion. Never label
+    completion of the host copy as power-failure-safe persistence. Do not treat
+    allocator-reserved CUDA memory as live tensor allocation.
+19. Mixed archive/resume experiments use actual arrival timestamps, transfer
+    completion independent of the decoder, and queue-inclusive first-token time.
+    The large random-byte archive is explicitly synthetic, not model KV. Validate
+    its SHA-256 on a forced disk read outside timings, not just a constant pattern.
+20. A mixed RAM-hit result does not establish cold-read preemption, p99, sustained
+    device equilibrium, large-model quality, or production concurrency.
+
 Transport GB/s uses decimal gigabytes; MiB/GiB capacities use binary units. Published JSON intentionally
 omits hostnames, addresses, usernames, private prompts, token IDs, and model-cache contents.
