@@ -7,6 +7,7 @@ The disk implementation and format are shared with TieredStore, not duplicated.
 from __future__ import annotations
 
 import threading
+import time
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -14,7 +15,27 @@ from pathlib import Path
 
 import torch
 
+from .metrics import Metrics, ratio
 from .store import ALIGNMENT, DTYPES, Metadata, TieredStore, _aligned_buffer, _bytes, _round_up
+
+# Stable observability schema for the session layer. See store.COUNTER_SCHEMA.
+COUNTER_SCHEMA = (
+    "offload_calls", "offload_accepted", "offload_bytes",
+    "offload_rejected_immutable", "offload_rejected_pending",
+    "offload_rejected_oversize", "offload_rejected_occupied",
+    "copy_ok", "copy_errors",
+    "released_ok", "persist_ok", "persist_errors", "persist_bytes",
+    "retry_calls", "retry_ok", "retry_errors",
+    "retry_rejected_state", "retry_rejected_pending",
+    "discard_calls", "discard_bytes",
+    "read_calls", "read_ok", "read_errors",
+    "read_hot", "read_hot_bytes", "read_disk_requests", "read_rejected_busy",
+    "prefetch_calls", "prefetch_busy", "prefetch_ram_hits",
+    "contains_calls", "contains_hits", "contains_misses",
+    "evictions_clean", "evicted_clean_bytes",
+    "close_calls", "close_persistence_failures",
+)
+LATENCY_SCHEMA = ("released_ms", "durable_ms", "retry_ms")
 
 
 class CacheBusy(RuntimeError):
@@ -55,6 +76,7 @@ class _Entry:
     host: torch.Tensor | None = None
     state: str = "copying"
     readers: int = 0
+    started_ns: int = 0
 
 
 @dataclass
@@ -96,6 +118,7 @@ class RamFirstStore:
         self.max_pending = max_pending
         self.max_reads = max_reads
         self._lock = threading.RLock()
+        self.metrics = Metrics()
         self._entries: OrderedDict[str, _Entry] = OrderedDict()
         self._disk_keys = set(self._disk._disk)
         self._used = self._pending = self._reads = self._peak = 0
@@ -121,6 +144,7 @@ class RamFirstStore:
 
     def _reserve(self, cost):
         if cost > self.ram_budget:
+            self.metrics.add("offload_rejected_oversize")
             raise CacheBusy("snapshot exceeds RAM capacity; use streamed TieredStore.put")
         candidates = [
             key
@@ -129,6 +153,7 @@ class RamFirstStore:
         ]
         reclaimable = sum(self._entries[key].cost for key in candidates)
         if self._used + cost - reclaimable > self.ram_budget:
+            self.metrics.add("offload_rejected_occupied")
             raise CacheBusy("RAM occupied by dirty, failed, or actively read snapshots")
         for key in candidates:
             if self._used + cost <= self.ram_budget:
@@ -136,10 +161,13 @@ class RamFirstStore:
             old = self._entries.pop(key)
             self._used -= old.cost
             old.host = None
+            self.metrics.add("evictions_clean")
+            self.metrics.add("evicted_clean_bytes", old.cost)
         self._used += cost
         self._peak = max(self._peak, self._used)
 
     def offload_async(self, key: str, tensor: torch.Tensor) -> Offload:
+        self.metrics.add("offload_calls")
         self._disk._check_key(key)
         if tensor.device != self.device:
             raise ValueError(f"input must be on {self.device}")
@@ -159,15 +187,24 @@ class RamFirstStore:
         with self._lock:
             self._check_open()
             if key in self._entries or key in self._disk_keys:
+                self.metrics.add("offload_rejected_immutable")
                 raise FileExistsError("snapshot keys are immutable")
             if self._pending >= self.max_pending:
+                self.metrics.add("offload_rejected_pending")
                 raise CacheBusy("pending archive count reached max_pending")
             entry = _Entry(
-                key, tuple(tensor.shape), tensor.dtype, nbytes, _round_up(nbytes) + ALIGNMENT
+                key,
+                tuple(tensor.shape),
+                tensor.dtype,
+                nbytes,
+                _round_up(nbytes) + ALIGNMENT,
+                started_ns=time.perf_counter_ns(),
             )
             self._reserve(entry.cost)
             self._pending += 1
             self._entries[key] = entry
+            self.metrics.add("offload_accepted")
+            self.metrics.add("offload_bytes", nbytes)
             self._copy.submit(self._copy_input, _Copy(entry, tensor, ready))
             return entry.handle
 
@@ -188,6 +225,7 @@ class RamFirstStore:
             with self._lock:
                 entry.host = host[: entry.nbytes]
                 entry.state = "dirty"
+            self.metrics.add("copy_ok")
         except BaseException as exc:
             # Drain a partially enqueued copy before relinquishing source/host.
             if self._offload_stream is not None:
@@ -203,12 +241,18 @@ class RamFirstStore:
                 self._entries.pop(entry.key)
                 self._used -= entry.cost
                 self._pending -= 1
+            self.metrics.add("copy_errors")
             entry.handle.released.set_exception(error)
             entry.handle.durable.set_exception(error)
             return
         # Submit before notifying clients: close waits the copy worker before
         # closing disk, and clients may synchronously wait on these milestones.
         self._disk._submit(self._persist, entry, priority=10)
+        # Milestone 1: the GPU input may be reused. This is the number the
+        # RAM-first design exists to protect, so it is measured separately from
+        # the durability milestone below.
+        self.metrics.observe("released_ms", time.perf_counter_ns() - entry.started_ns)
+        self.metrics.add("released_ok")
         entry.handle.released.set_result(None)
 
     def _persist(self, entry):
@@ -224,18 +268,27 @@ class RamFirstStore:
             self._pending -= 1
             entry.state = "failed" if error else "clean"
         if error:
+            self.metrics.add("persist_errors")
             entry.handle.durable.set_exception(error)
         else:
+            # Milestone 2: crash-safe. Until this fires the data exists only in
+            # host RAM, and a process crash loses it.
+            self.metrics.observe("durable_ms", time.perf_counter_ns() - entry.started_ns)
+            self.metrics.add("persist_ok")
+            self.metrics.add("persist_bytes", entry.nbytes)
             entry.handle.durable.set_result(meta)
 
     def retry_persist(self, key: str) -> Future[Metadata]:
         """Retry a failed archive without copying or retaining the GPU input."""
+        self.metrics.add("retry_calls")
         with self._lock:
             self._check_open()
             entry = self._entries[key]
             if entry.state != "failed":
+                self.metrics.add("retry_rejected_state")
                 raise ValueError("only failed entries can be retried")
             if self._pending >= self.max_pending:
+                self.metrics.add("retry_rejected_pending")
                 raise CacheBusy("pending archive count reached max_pending")
             # If directory fsync failed after rename, durability was not reported
             # but the disk entry may exist. Verify, sync, and register it below.
@@ -262,15 +315,23 @@ class RamFirstStore:
                 with self._lock:
                     entry.state = "failed"
                     self._pending -= 1
+                self.metrics.add("retry_errors")
                 entry.handle.durable.set_exception(exc.with_traceback(None))
                 return
             with self._lock:
                 self._disk_keys = set(self._disk._disk)
                 entry.state = "clean"
                 self._pending -= 1
+            self.metrics.observe("retry_ms", time.perf_counter_ns() - entry.started_ns)
+            self.metrics.add("retry_ok")
             entry.handle.durable.set_result(meta)
         else:
             self._persist(entry)
+            # A retry that re-ran the archive counts as a retry success, not
+            # only as a persist success, otherwise retry rate reads as 0%.
+            self.metrics.observe("retry_ms", time.perf_counter_ns() - entry.started_ns)
+            if entry.state == "clean":
+                self.metrics.add("retry_ok")
 
     def discard(self, key: str):
         """Explicitly drop a clean/failed RAM copy; never drop an in-flight one."""
@@ -282,6 +343,8 @@ class RamFirstStore:
             self._entries.pop(key)
             self._used -= entry.cost
             entry.host = None
+            self.metrics.add("discard_calls")
+            self.metrics.add("discard_bytes", entry.cost)
 
     def _finish_read(self, future, result=None, error=None, entry=None):
         with self._lock:
@@ -289,11 +352,14 @@ class RamFirstStore:
             if entry is not None:
                 entry.readers -= 1
         if error is not None:
+            self.metrics.add("read_errors")
             future.set_exception(error.with_traceback(None))
         else:
+            self.metrics.add("read_ok")
             future.set_result(result)
 
     def get_async(self, key: str, *, out=None) -> Future[torch.Tensor]:
+        self.metrics.add("read_calls")
         self._disk._check_key(key)
         ready = None
         if out is not None and out.device.type == "cuda":
@@ -303,10 +369,13 @@ class RamFirstStore:
         with self._lock:
             self._check_open()
             if self._reads >= self.max_reads:
+                self.metrics.add("read_rejected_busy")
                 raise CacheBusy("read queue reached max_reads")
             self._reads += 1
             entry = self._entries.get(key)
             if entry is None:
+                self.metrics.add("read_disk")
+                self.metrics.add("read_disk_requests")
                 # Foreground disk jobs jump queued writes, not an in-flight I/O.
                 internal = self._disk._submit(self._disk._get, key, out, ready, priority=0)
 
@@ -322,6 +391,8 @@ class RamFirstStore:
             else:
                 self._entries.move_to_end(key)
                 entry.readers += 1
+                self.metrics.add("read_hot")
+                self.metrics.add("read_hot_bytes", entry.nbytes)
 
                 def copied(value):
                     try:
@@ -378,11 +449,13 @@ class RamFirstStore:
         Like foreground reads, these requests count toward max_reads. They run
         before queued archives but after queued foreground cold restores.
         """
+        self.metrics.add("prefetch_calls")
         self._disk._check_key(key)
         future = _Completion()
         with self._lock:
             self._check_open()
             if self._reads >= self.max_reads:
+                self.metrics.add("prefetch_busy")
                 raise CacheBusy("read queue reached max_reads")
             self._reads += 1
             self._disk._submit(self._prefetch, key, future, priority=5)
@@ -394,6 +467,7 @@ class RamFirstStore:
             with self._lock:
                 existing = self._entries.get(key)
             if existing is not None:
+                self.metrics.add("prefetch_ram_hits")
                 # A copy may be queued independently; do not block the disk
                 # worker waiting on its callbacks or consume another allocation.
                 def done(value):
@@ -443,12 +517,17 @@ class RamFirstStore:
         self._disk._check_key(key)
         with self._lock:
             self._check_open()
-            return key in self._entries or key in self._disk_keys
+            hit = key in self._entries or key in self._disk_keys
+        self.metrics.add("contains_calls")
+        self.metrics.add("contains_hits" if hit else "contains_misses")
+        return hit
 
     def stats(self):
         # No disk job: diagnostics and admission must not wait behind an archive.
         with self._lock:
             self._check_open()
+            metrics = self.metrics.snapshot(COUNTER_SCHEMA, LATENCY_SCHEMA)
+            counters = metrics["counters"]
             return {
                 "ram_reserved_bytes": self._used,
                 "ram_budget_bytes": self.ram_budget,
@@ -466,9 +545,24 @@ class RamFirstStore:
                 "max_reads": self.max_reads,
                 "disk_entries": len(self._disk_keys),
                 "pinned": self.device.type == "cuda",
+                "metrics": metrics,
+                "hit_rate": {
+                    "read": ratio(
+                        counters.get("read_hot", 0),
+                        counters.get("read_hot", 0) + counters.get("read_disk_requests", 0),
+                    ),
+                    "contains": ratio(
+                        counters.get("contains_hits", 0), counters.get("contains_calls", 0)
+                    ),
+                    "persist": ratio(
+                        counters.get("persist_ok", 0),
+                        counters.get("persist_ok", 0) + counters.get("persist_errors", 0),
+                    ),
+                },
             }
 
     def close(self):
+        self.metrics.add("close_calls")
         with self._lock:
             owner = not self._closed
             self._closed = True
@@ -486,6 +580,7 @@ class RamFirstStore:
             self._entries.clear()
             self._used = 0
             if failed:
+                self.metrics.add("close_persistence_failures", len(failed))
                 raise PersistenceError(f"{len(failed)} snapshot(s) were not durable at close")
         finally:
             self._closing.set()

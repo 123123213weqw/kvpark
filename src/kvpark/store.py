@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 import zlib
 from collections import OrderedDict
@@ -22,10 +23,27 @@ from pathlib import Path
 
 import torch
 
+from .metrics import Metrics, ratio
 from .scheduler import PriorityWorker
 
 ALIGNMENT = 4096
 KEY_RE = re.compile(r"[0-9a-f]{64}\Z")
+# Stable observability schema. Every name here is reported even when its code
+# path never ran, so a dashboard cannot break on a missing key.
+COUNTER_SCHEMA = (
+    "put_calls", "put_ok", "put_errors", "put_rejected_immutable",
+    "put_bytes", "put_stored_bytes",
+    "get_calls", "get_ok", "get_errors", "get_misses", "get_corrupt",
+    "get_ram_hits", "get_disk_hits", "get_ram_bytes", "get_disk_bytes",
+    "prefetch_calls", "prefetch_ok", "prefetch_ram_hits", "prefetch_errors",
+    "prefetch_rejected_large", "prefetch_bytes",
+    "contains_calls", "contains_hits", "contains_misses",
+    "evictions_ram", "evicted_ram_bytes", "evictions_disk", "evicted_disk_bytes",
+    "admit_skipped", "checksum_failures", "corrupt_short_payload",
+    "startup_orphan_pending", "startup_disk_entries", "startup_disk_bytes",
+)
+LATENCY_SCHEMA = ("put_ms", "get_ms", "get_ram_ms", "get_disk_ms", "prefetch_ms")
+
 DTYPES = {
     name: getattr(torch, name)
     for name in ("float16", "bfloat16", "float32", "float64", "int8", "uint8", "int32", "int64")
@@ -161,6 +179,7 @@ class TieredStore:
         self.verify = verify
         self.pipeline_reads = pipeline_reads
         self.foreground_first = foreground_first
+        self.metrics = Metrics()
         self._ram: OrderedDict[str, torch.Tensor] = OrderedDict()
         self._disk: OrderedDict[str, Metadata] = OrderedDict()
         self._ram_used = 0
@@ -179,10 +198,13 @@ class TieredStore:
             for entry in sorted(self.root.iterdir(), key=lambda p: p.stat().st_mtime_ns):
                 if entry.name.startswith(".pending-") and entry.is_dir():
                     shutil.rmtree(entry)
+                    self.metrics.add("startup_orphan_pending")
                 elif KEY_RE.fullmatch(entry.name) and entry.is_dir():
                     meta = Metadata.read(entry, self.disk_budget)
                     self._disk[entry.name] = meta
                     self._disk_used += meta.stored_bytes
+                    self.metrics.add("startup_disk_entries")
+                    self.metrics.add("startup_disk_bytes", meta.stored_bytes)
             self._evict_disk(0)
             self._pool = (
                 PriorityWorker()
@@ -238,11 +260,15 @@ class TieredStore:
     def _evict_ram(self, incoming: int) -> None:
         while self._ram and self._ram_used + incoming > self.ram_budget:
             _, tensor = self._ram.popitem(last=False)
-            self._ram_used -= tensor.untyped_storage().nbytes()
+            freed = tensor.untyped_storage().nbytes()
+            self._ram_used -= freed
+            self.metrics.add("evictions_ram")
+            self.metrics.add("evicted_ram_bytes", freed)
 
     def _admit(self, key: str, tensor: torch.Tensor) -> None:
         cost = tensor.untyped_storage().nbytes()
         if cost > self.ram_budget:
+            self.metrics.add("admit_skipped")
             return
         self._evict_ram(cost)
         self._ram[key] = tensor
@@ -253,6 +279,8 @@ class TieredStore:
             key, meta = self._disk.popitem(last=False)
             shutil.rmtree(self.root / key)
             self._disk_used -= meta.stored_bytes
+            self.metrics.add("evictions_disk")
+            self.metrics.add("evicted_disk_bytes", meta.stored_bytes)
             cached = self._ram.pop(key, None)
             if cached is not None:
                 self._ram_used -= cached.untyped_storage().nbytes()
@@ -267,11 +295,16 @@ class TieredStore:
 
     def contains(self, key: str) -> bool:
         self._check_key(key)
-        return self._submit(lambda: key in self._disk).result()
+        hit = self._submit(lambda: key in self._disk).result()
+        self.metrics.add("contains_calls")
+        self.metrics.add("contains_hits" if hit else "contains_misses")
+        return hit
 
     def stats(self) -> dict:
-        return self._submit(
-            lambda: {
+        def snapshot() -> dict:
+            metrics = self.metrics.snapshot(COUNTER_SCHEMA, LATENCY_SCHEMA)
+            counters = metrics["counters"]
+            data = {
                 "ram_used_bytes": self._ram_used,
                 "ram_budget_bytes": self.ram_budget,
                 "ram_entries": len(self._ram),
@@ -283,8 +316,26 @@ class TieredStore:
                 "direct_io": self.direct_io,
                 "verify": self.verify,
                 "pipeline_reads": self.pipeline_reads,
+                "metrics": metrics,
+                "hit_rate": {
+                    # None, not 0.0, when nothing happened: a fabricated 0% would
+                    # look like a measured miss rate on an idle store.
+                    "get": ratio(
+                        counters.get("get_ram_hits", 0) + counters.get("get_disk_hits", 0),
+                        counters.get("get_ok", 0) + counters.get("get_misses", 0),
+                    ),
+                    "contains": ratio(
+                        counters.get("contains_hits", 0), counters.get("contains_calls", 0)
+                    ),
+                    "ram_share_of_hits": ratio(
+                        counters.get("get_ram_hits", 0),
+                        counters.get("get_ram_hits", 0) + counters.get("get_disk_hits", 0),
+                    ),
+                },
             }
-        ).result()
+            return data
+
+        return self._submit(snapshot).result()
 
     def clear_ram(self) -> None:
         def clear():
@@ -294,6 +345,7 @@ class TieredStore:
         self._submit(clear).result()
 
     def put_async(self, key: str, tensor: torch.Tensor) -> Future[Metadata]:
+        self.metrics.add("put_calls")
         self._check_key(key)
         if tensor.device != self.device:
             raise ValueError(f"input must be on {self.device}, not {tensor.device}")
@@ -315,6 +367,29 @@ class TieredStore:
         return self.put_async(key, tensor).result()
 
     def _put(self, key: str, tensor: torch.Tensor, ready) -> Metadata:
+        """Instrumented entry point. The disk work itself is :meth:`_put_impl`.
+
+        Kept as the private name that :class:`RamFirstStore` calls, so layered
+        persistence is measured in both the session and disk metrics.
+        """
+        started = time.perf_counter_ns()
+        try:
+            meta = self._put_impl(key, tensor, ready)
+        except FileExistsError:
+            self.metrics.add("put_rejected_immutable")
+            raise
+        except BaseException:
+            self.metrics.add("put_errors")
+            raise
+        self.metrics.add("put_ok")
+        self.metrics.add("put_bytes", meta.nbytes)
+        self.metrics.add("put_stored_bytes", meta.stored_bytes)
+        # Latency covers successful work only. A rejected attempt is counted,
+        # not timed, so it cannot drag the reported distribution downwards.
+        self.metrics.observe("put_ms", time.perf_counter_ns() - started)
+        return meta
+
+    def _put_impl(self, key: str, tensor: torch.Tensor, ready) -> Metadata:
         if key in self._disk:
             raise FileExistsError("snapshot keys are immutable; choose a new semantic key")
         self._setup_transfer()
@@ -407,23 +482,40 @@ class TieredStore:
         """Populate the pinned-RAM LRU; False means the item exceeds its budget."""
         self._check_key(key)
 
+        self.metrics.add("prefetch_calls")
+
         def run():
-            meta = self._metadata(key)
+            started = time.perf_counter_ns()
+            try:
+                meta = self._metadata(key)
+            except BaseException:
+                self.metrics.add("prefetch_errors")
+                raise
             if key in self._ram:
                 self._ram.move_to_end(key)
+                self.metrics.add("prefetch_ram_hits")
                 return True
             allocation = _round_up(meta.nbytes) + ALIGNMENT
             if allocation > self.ram_budget:
+                self.metrics.add("prefetch_rejected_large")
                 return False
             self._evict_ram(allocation)
             host = _aligned_buffer(_round_up(meta.nbytes), self.device.type == "cuda")
-            self._read(meta, host[: meta.nbytes], host_storage=host)
+            try:
+                self._read(meta, host[: meta.nbytes], host_storage=host)
+            except BaseException:
+                self.metrics.add("prefetch_errors")
+                raise
             self._admit(key, host[: meta.nbytes])
+            self.metrics.add("prefetch_ok")
+            self.metrics.add("prefetch_bytes", meta.nbytes)
+            self.metrics.observe("prefetch_ms", time.perf_counter_ns() - started)
             return True
 
         return self._submit(run)
 
     def get_async(self, key: str, *, out: torch.Tensor | None = None) -> Future[torch.Tensor]:
+        self.metrics.add("get_calls")
         self._check_key(key)
         destination_ready = None
         if out is not None and out.device.type == "cuda":
@@ -435,6 +527,24 @@ class TieredStore:
         return self.get_async(key, out=out).result()
 
     def _get(self, key: str, out: torch.Tensor | None, destination_ready) -> torch.Tensor:
+        """Instrumented entry point. The transfer itself is :meth:`_get_impl`."""
+        started = time.perf_counter_ns()
+        try:
+            result = self._get_impl(key, out, destination_ready)
+        except KeyError:
+            self.metrics.add("get_misses")
+            raise
+        except CacheCorruption:
+            self.metrics.add("get_corrupt")
+            raise
+        except BaseException:
+            self.metrics.add("get_errors")
+            raise
+        self.metrics.add("get_ok")
+        self.metrics.observe("get_ms", time.perf_counter_ns() - started)
+        return result
+
+    def _get_impl(self, key: str, out: torch.Tensor | None, destination_ready) -> torch.Tensor:
         meta = self._metadata(key)
         if out is None:
             out = torch.empty(meta.shape, dtype=DTYPES[meta.dtype], device=self.device)
@@ -452,14 +562,20 @@ class TieredStore:
         if key in self._ram:
             self._ram.move_to_end(key)
             host = self._ram[key]
-            if self._stream is not None:
-                with torch.cuda.stream(self._stream):
-                    destination.copy_(host, non_blocking=True)
-                self._stream.synchronize()
-            else:
-                destination.copy_(host)
+            self.metrics.add("get_ram_hits")
+            self.metrics.add("get_ram_bytes", meta.nbytes)
+            with self.metrics.time("get_ram_ms"):
+                if self._stream is not None:
+                    with torch.cuda.stream(self._stream):
+                        destination.copy_(host, non_blocking=True)
+                    self._stream.synchronize()
+                else:
+                    destination.copy_(host)
         else:
-            self._read(meta, destination)
+            self.metrics.add("get_disk_hits")
+            self.metrics.add("get_disk_bytes", meta.nbytes)
+            with self.metrics.time("get_disk_ms"):
+                self._read(meta, destination)
         return out
 
     def _read(self, meta: Metadata, destination: torch.Tensor, host_storage=None) -> None:
@@ -497,6 +613,7 @@ class TieredStore:
                     os.lseek(descriptor, offset + done, os.SEEK_SET)
                     amount = os.readv(descriptor, [view[done:]])
                 if amount == 0:
+                    self.metrics.add("corrupt_short_payload")
                     raise CacheCorruption("unexpected EOF in tensor payload")
                 done += amount
             return buffer, view, length, offset, slot
@@ -517,6 +634,7 @@ class TieredStore:
                 else:
                     buffer, view, length, offset, slot = fill(index)
                 if self.verify and f"{zlib.crc32(view[:length]):08x}" != expected_hash:
+                    self.metrics.add("checksum_failures")
                     raise CacheCorruption(f"payload checksum mismatch at chunk {index}")
                 if host_storage is None and destination is not None:
                     if self._stream is not None:

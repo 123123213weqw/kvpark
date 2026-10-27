@@ -135,6 +135,21 @@ write. Failed persistence remains readable in RAM and can be retried explicitly.
 mixed-workload reproduction](docs/writeback.md). This needs RAM for a full snapshot;
 when unavailable, retain the GPU state, recompute later, or use the slower streamed path.
 
+## Observability
+
+`stats()` reports a fixed-size metric set: per-outcome counters, exact byte
+totals, and latency histograms whose quantiles are documented upper bounds. The
+schema is stable, so a name is always present even when its code path never ran.
+See [docs/observability.md](docs/observability.md) for every field and for the
+2.5x quantile bound.
+
+```python
+stats = store.stats()
+stats["hit_rate"]["read"]                              # None, not 0.0, when idle
+stats["metrics"]["latency_ms"]["released_ms"]["max_ms"] # GPU input reusable
+stats["metrics"]["latency_ms"]["durable_ms"]["max_ms"]  # crash-safe
+```
+
 ## Reproduce transport measurements
 
 ```bash
