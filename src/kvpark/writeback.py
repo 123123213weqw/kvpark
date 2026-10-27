@@ -374,7 +374,6 @@ class RamFirstStore:
             self._reads += 1
             entry = self._entries.get(key)
             if entry is None:
-                self.metrics.add("read_disk")
                 self.metrics.add("read_disk_requests")
                 # Foreground disk jobs jump queued writes, not an in-flight I/O.
                 internal = self._disk._submit(self._disk._get, key, out, ready, priority=0)
