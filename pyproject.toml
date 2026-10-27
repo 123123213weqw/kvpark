@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kv-tier-lab"
+name = "kvpark"
 version = "0.3.0"
 description = "Measured, bounded RAM/disk KV snapshot storage for consumer CUDA GPUs"
 readme = "README.md"
@@ -16,8 +16,8 @@ test = ["pytest>=8", "ruff>=0.9"]
 demo = ["transformers>=4.51,<6", "safetensors>=0.4"]
 
 [project.scripts]
-kv-tier-bench = "kv_tier.benchmark:main"
-kv-tier-plan = "kv_tier.planner:main"
+kvpark-bench = "kvpark.benchmark:main"
+kvpark-plan = "kvpark.planner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

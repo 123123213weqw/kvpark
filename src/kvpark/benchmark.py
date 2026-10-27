@@ -111,7 +111,7 @@ def run(args):
         _sync(device)
         key = hashlib.sha256(f"synthetic-{nbytes}".encode()).hexdigest()
         case = {"size_mib": mib, "nbytes": nbytes}
-        with tempfile.TemporaryDirectory(prefix="kv-tier-bench-", dir=parent) as temporary:
+        with tempfile.TemporaryDirectory(prefix="kvpark-bench-", dir=parent) as temporary:
             with TieredStore(
                 temporary,
                 device=str(device),

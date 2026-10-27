@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from kv_tier import TieredStore, cache_key
-from kv_tier.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
+from kvpark import TieredStore, cache_key
+from kvpark.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
 
 
 def test_real_attention_cache_preserves_logits(tmp_path):

@@ -187,7 +187,7 @@ class TieredStore:
             self._pool = (
                 PriorityWorker()
                 if foreground_first
-                else ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-tier")
+                else ThreadPoolExecutor(max_workers=1, thread_name_prefix="kvpark")
             )
             self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kv-read")
             self._buffers: list[torch.Tensor] = []

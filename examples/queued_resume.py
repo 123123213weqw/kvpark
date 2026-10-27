@@ -17,9 +17,9 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 
-from kv_tier import TieredStore, cache_key
-from kv_tier.benchmark import hardware
-from kv_tier.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
+from kvpark import TieredStore, cache_key
+from kvpark.benchmark import hardware
+from kvpark.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
 
 
 def main():
@@ -115,7 +115,7 @@ def main():
     }
     with (
         torch.inference_mode(),
-        tempfile.TemporaryDirectory(prefix="kv-tier-queue-", dir=parent) as temporary,
+        tempfile.TemporaryDirectory(prefix="kvpark-queue-", dir=parent) as temporary,
     ):
         initial = model(session_ids[0][:, :-1], use_cache=True, **prefill_kwargs)
         sample = pack_dynamic_cache(initial.past_key_values)

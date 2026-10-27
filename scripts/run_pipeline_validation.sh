@@ -20,11 +20,11 @@ rm -f private/pipeline-bench.complete
 for mode in serial pipelined; do
   flags=()
   if [[ "$mode" == serial ]]; then flags+=(--no-pipeline-reads); fi
-  "$PYTHON" -m kv_tier.benchmark --root "$SSD_ROOT" --label "ssd-v02-$mode" \
+  "$PYTHON" -m kvpark.benchmark --root "$SSD_ROOT" --label "ssd-v02-$mode" \
     --sizes-mib 256 1024 --repeats 5 --direct-io "${flags[@]}" \
     --output "$RESULT_DIR/ssd-v02-$mode.json"
 done
-"$PYTHON" -m kv_tier.benchmark --root "$HDD_ROOT" --label hdd-v02-pipelined \
+"$PYTHON" -m kvpark.benchmark --root "$HDD_ROOT" --label hdd-v02-pipelined \
   --sizes-mib 1024 --repeats 3 --direct-io --output "$RESULT_DIR/hdd-v02-pipelined.json"
 touch private/pipeline-bench.complete
 fi

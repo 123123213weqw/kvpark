@@ -5,7 +5,7 @@ an opt-in write-back wrapper over the same validated disk format. It trades a
 bounded full-snapshot RAM reservation for earlier GPU input release.
 
 ```python
-from kv_tier import CacheBusy, RamFirstStore
+from kvpark import CacheBusy, RamFirstStore
 
 # kv is already packed/contiguous on cuda:0; key binds the entire causal prefix.
 with RamFirstStore(

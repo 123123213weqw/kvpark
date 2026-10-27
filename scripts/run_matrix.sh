@@ -26,7 +26,7 @@ fi
 
 for tier in hdd ssd; do
   if [[ "$tier" == hdd ]]; then root="$HDD_ROOT"; else root="$SSD_ROOT"; fi
-  "$PYTHON" -m kv_tier.benchmark --root "$root" --label "$tier" \
+  "$PYTHON" -m kvpark.benchmark --root "$root" --label "$tier" \
     --device cuda:0 --sizes-mib 16 256 1024 --repeats 5 --direct-io \
     --output "$RESULT_DIR/$tier-verified.json"
 done
@@ -36,13 +36,13 @@ done
 
 for chunk in 1 8 32; do
   for slots in 1 2; do
-    "$PYTHON" -m kv_tier.benchmark --root "$SSD_ROOT" --label ssd-tuning \
+    "$PYTHON" -m kvpark.benchmark --root "$SSD_ROOT" --label ssd-tuning \
       --device cuda:0 --sizes-mib 256 --repeats 3 --direct-io \
       --chunk-mib "$chunk" --slots "$slots" \
       --output "$RESULT_DIR/ssd-chunk${chunk}-slots${slots}.json"
   done
 done
-"$PYTHON" -m kv_tier.benchmark --root "$SSD_ROOT" --label ssd-trusted-no-read-checksum \
+"$PYTHON" -m kvpark.benchmark --root "$SSD_ROOT" --label ssd-trusted-no-read-checksum \
   --device cuda:0 --sizes-mib 256 1024 --repeats 5 --direct-io --no-verify \
   --output "$RESULT_DIR/ssd-no-read-checksum.json"
 printf '\nMatrix complete. Results: %s\n' "$RESULT_DIR"

@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 import torch
 
-from kv_tier import CacheBusy, PersistenceError, RamFirstStore, TieredStore
-from kv_tier.scheduler import PriorityWorker
+from kvpark import CacheBusy, PersistenceError, RamFirstStore, TieredStore
+from kvpark.scheduler import PriorityWorker
 
 
 def key(i=0):
@@ -179,7 +179,7 @@ def test_explicit_discard_acknowledges_failed_data_loss(tmp_path, monkeypatch):
 
 
 def test_copy_allocation_failure_releases_reservation(tmp_path, monkeypatch):
-    import kv_tier.writeback as module
+    import kvpark.writeback as module
 
     with RamFirstStore(tmp_path, ram_bytes=8192, chunk_bytes=4096) as store:
 
@@ -359,7 +359,7 @@ def test_priority_worker_gives_old_archive_a_turn_under_read_flood():
 
 
 def test_secondary_stream_error_does_not_strand_notifications(tmp_path, monkeypatch):
-    import kv_tier.writeback as module
+    import kvpark.writeback as module
 
     class BrokenStream:
         def synchronize(self):
@@ -427,7 +427,7 @@ def test_cold_foreground_read_jumps_a_queued_archive(tmp_path, monkeypatch):
 
 
 def test_prefetch_corruption_and_unknown_reads_release_reservations(tmp_path):
-    from kv_tier import CacheCorruption
+    from kvpark import CacheCorruption
 
     with TieredStore(tmp_path, chunk_bytes=4096) as disk:
         disk.put(key(), torch.ones(100))
@@ -456,7 +456,7 @@ def test_ram_copy_survives_disk_quota_eviction(tmp_path):
 
 
 def test_failed_cold_read_handle_does_not_retain_allocated_output(tmp_path, monkeypatch):
-    from kv_tier import CacheCorruption
+    from kvpark import CacheCorruption
 
     with TieredStore(tmp_path, chunk_bytes=4096) as disk:
         disk.put(key(), torch.ones(100))

@@ -19,9 +19,9 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 
-from kv_tier import RamFirstStore, TieredStore, cache_key
-from kv_tier.benchmark import hardware
-from kv_tier.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
+from kvpark import RamFirstStore, TieredStore, cache_key
+from kvpark.benchmark import hardware
+from kvpark.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
 
 
 def main():
@@ -157,7 +157,7 @@ def main():
     for repeat in range(args.repeats):
         modes = ("fifo_durable", "ram_first") if repeat % 2 == 0 else ("ram_first", "fifo_durable")
         for mode in modes:
-            with tempfile.TemporaryDirectory(prefix="kv-tier-mixed-", dir=parent) as directory:
+            with tempfile.TemporaryDirectory(prefix="kvpark-mixed-", dir=parent) as directory:
                 cls = RamFirstStore if mode == "ram_first" else TieredStore
                 options = {"max_reads": args.requests + 1} if mode == "ram_first" else {}
                 with cls(

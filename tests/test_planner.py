@@ -1,6 +1,6 @@
 import pytest
 
-from kv_tier.planner import choose_restore, kv_bytes
+from kvpark.planner import choose_restore, kv_bytes
 
 
 def test_one_gib_example():

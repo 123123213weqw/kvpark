@@ -5,7 +5,7 @@ import sys
 import pytest
 import torch
 
-from kv_tier import CacheCorruption, TieredStore, cache_key
+from kvpark import CacheCorruption, TieredStore, cache_key
 
 
 def key(index=0):

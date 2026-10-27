@@ -5,7 +5,7 @@ import os
 import pytest
 import torch
 
-from kv_tier import CacheCorruption, TieredStore
+from kvpark import CacheCorruption, TieredStore
 
 KEY = hashlib.sha256(b"fault-injection").hexdigest()
 

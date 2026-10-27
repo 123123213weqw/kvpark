@@ -1,4 +1,4 @@
-# KV Tier Lab
+# kvpark
 
 **Cheap, exact KV snapshot storage with a measured disk → pinned RAM → CUDA
 restore path, plus bounded RAM-first offload.** This project targets consumer GPUs and reused/paused prefixes,
@@ -71,7 +71,7 @@ The Hugging Face test constructs a tiny random Llama locally; no model download 
 
 ```python
 import torch
-from kv_tier import TieredStore, cache_key
+from kvpark import TieredStore, cache_key
 
 signature = {
     "model": "my-model",
@@ -116,7 +116,7 @@ is not guaranteed to shrink after eviction. GPU output tensors are caller/engine
 before releasing a paused session's VRAM, opt into **`RamFirstStore`**:
 
 ```python
-from kv_tier import CacheBusy, RamFirstStore
+from kvpark import CacheBusy, RamFirstStore
 
 with RamFirstStore("/data/my-kv-cache", device="cuda:0", ram_bytes=2 * 1024**3,
                    disk_bytes=100 * 1024**3, max_pending=2, max_reads=8) as store:
@@ -138,9 +138,9 @@ when unavailable, retain the GPU state, recompute later, or use the slower strea
 ## Reproduce transport measurements
 
 ```bash
-kv-tier-bench --root /your/hdd/bench --label hdd --device cuda:0 \
+kvpark-bench --root /your/hdd/bench --label hdd --device cuda:0 \
   --sizes-mib 16 256 1024 --repeats 5 --direct-io --output results/hdd.json
-kv-tier-bench --root /your/ssd/bench --label ssd --device cuda:0 \
+kvpark-bench --root /your/ssd/bench --label ssd --device cuda:0 \
   --sizes-mib 16 256 1024 --repeats 5 --direct-io --output results/ssd.json
 ```
 
@@ -192,7 +192,7 @@ The Qwen invocation above is an optional larger-model recipe, **not a completed 
 
 ```bash
 # Illustrative inputs, not measured defaults or a hardware price quote.
-kv-tier-plan --layers 32 --kv-heads 8 --head-dim 128 --tokens 8192 \
+kvpark-plan --layers 32 --kv-heads 8 --head-dim 128 --tokens 8192 \
   --bits 16 --link-gbps 12 --disk-gbps 0.18 --recompute-ms 500
 ```
 

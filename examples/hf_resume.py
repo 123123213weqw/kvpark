@@ -11,9 +11,9 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 
-from kv_tier import TieredStore, cache_key
-from kv_tier.benchmark import hardware, measure
-from kv_tier.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
+from kvpark import TieredStore, cache_key
+from kvpark.benchmark import hardware, measure
+from kvpark.hf import pack_dynamic_cache, resolve_model_revision, unpack_dynamic_cache
 
 
 def main():
@@ -140,7 +140,7 @@ def main():
         }
         parent = Path(args.root).expanduser()
         parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="kv-tier-hf-", dir=parent) as temporary:
+        with tempfile.TemporaryDirectory(prefix="kvpark-hf-", dir=parent) as temporary:
             with TieredStore(
                 temporary,
                 device=str(device),
